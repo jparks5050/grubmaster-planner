@@ -1,15 +1,19 @@
 // src/main.jsx
 import React from "react";
-import { createRoot } from "react-dom/client";
+import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
-import ErrorBoundary from "./ErrorBoundary.jsx";
 import "./index.css";
 
-const root = createRoot(document.getElementById("root"));
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+window.onerror = (msg, src, line, col, err) => {
+  console.error("[window.onerror]", msg, src, line, col, err);
+};
+window.onunhandledrejection = (e) => {
+  console.error("[unhandledrejection]", e.reason || e);
+};
+
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error('No #root element found in index.html');
+}
+ReactDOM.createRoot(rootEl).render(<App />);
+
