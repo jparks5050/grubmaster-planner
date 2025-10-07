@@ -2,18 +2,14 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import ErrorBoundary from "./ErrorBoundary.jsx";
 import "./index.css";
 
-const container = document.getElementById("root");
-if (!container) {
-  console.error("No #root element found");
-} else {
-  const root = createRoot(container);
-  root.render(
-    <React.StrictMode>
+const root = createRoot(document.getElementById("root"));
+root.render(
+  <React.StrictMode>
+    <ErrorBoundary>
       <App />
-    </React.StrictMode>
-  );
-  console.log("React root rendered");
-}
-
+    </ErrorBoundary>
+  </React.StrictMode>
+);
