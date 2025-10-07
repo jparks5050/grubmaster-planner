@@ -685,7 +685,7 @@ export default function GrubmasterPlanner() {
     await signInWithRedirect(auth, new GoogleAuthProvider());
   }
   };
-  const doSignOut = async () => { if (!auth) return; await signOut(auth); };
+  const doSignOut = async () => {if (!auth) return; await signOut(auth);
 
   const disableSave = !authed || !troopId;
 
@@ -1025,3 +1025,4 @@ export default function GrubmasterPlanner() {
       </footer>
     </div>
   );
+                                }                                 
