@@ -22,7 +22,7 @@ import {
   signInWithRedirect,
   GoogleAuthProvider,
   signOut,
-, signInWithRedirect } from "firebase/auth";
+} from "firebase/auth";
 import {
   getFirestore,
   enableIndexedDbPersistence,
