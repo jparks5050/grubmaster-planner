@@ -621,26 +621,23 @@ export default function GrubmasterPlanner() {
   // UI helpers
   const Pill = ({ children }) => <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">{children}</span>;
 
-  // --- Diagnostics & Tests ---
-  const [testsOpen, setTestsOpen] = useState(false);
-  const [testResults, setTestResults] = useState([]);
-  useEffect(() => {
-    const results = [];const assert = (name, cond) => results.push({ name, pass: !!cond });
+ // --- Diagnostics & Tests ---
+const [testsOpen, setTestsOpen] = useState(false);
+const [testResults, setTestResults] = useState([]);
 
 useEffect(() => {
-  try {
-    const results = [];
-    const assert = (name, cond) => results.push({ name, pass: !!cond });
+  if (!testsOpen) return; // only run when panel is open
 
-    // Export payload basic check
-    const payload = buildRecipesExport(SEED_RECIPES);
-    assert(
-      "Export payload has recipes[]",
-      Array.isArray(payload.recipes) && payload.recipes.length > 0
-    );
+  const results = [];
+  const assert = (name, cond) => results.push({ name, pass: !!cond });
 
-    // Import merge dry-run on local (without Firestore)
-    (async () => {
+  (async () => {
+    try {
+      // Export payload basic check
+      const payload = buildRecipesExport(SEED_RECIPES);
+      assert("Export payload has recipes[]", Array.isArray(payload.recipes) && payload.recipes.length > 0);
+
+      // Import merge dry-run on local (without Firestore)
       const sample = [{
         id: "demo-import-1",
         name: "Test Imported Recipe",
@@ -652,53 +649,43 @@ useEffect(() => {
         steps: ["Cook rice."],
       }];
       try {
-        const rep = await mergeImportedRecipes(
-          sample,
-          { db: null, troopId: "", authed: false, user: null },
-          () => {}
-        );
-        assert(
-          "Import merge returns report object",
-          rep && typeof rep === "object" && "added" in rep
-        );
+        const rep = await mergeImportedRecipes(sample, { db: null, troopId: "", authed: false, user: null }, () => {});
+        assert("Import merge returns report object", rep && typeof rep === "object" && "added" in rep);
       } catch {
         assert("Import merge returns report object", false);
       }
-      setTestResults(results);
-    })();
 
-    // Test 1: Normalizer fills missing tags keys
-    const t1 = normalizeRecipe({ name: "X", tags: { backpacking: true }, ingredients: [], steps: [] });
-    assert("Normalizer sets dutchOven=false when missing", t1.tags.dutchOven === false);
+      // Test 1: Normalizer fills missing tags keys
+      const t1 = normalizeRecipe({ name: "X", tags: { backpacking: true }, ingredients: [], steps: [] });
+      assert("Normalizer sets dutchOven=false when missing", t1.tags.dutchOven === false);
 
-    // Test 2: Filter does not throw with missing tags
-    const sample2 = [normalizeRecipe({ id: "a", name: "No Tags", mealType: "dinner", ingredients: [], steps: [] })];
-    const guardFilter = () => sample2.filter(r => { const t = r.tags || {}; return !("backpacking" === "backpacking" && !t.backpacking); });
-    let threw = false; try { guardFilter(); } catch { threw = true; }
-    assert("Filter safe when r.tags undefined", threw === false);
+      // Test 2: Filter guard
+      const sample2 = [normalizeRecipe({ id: "a", name: "No Tags", mealType: "dinner", ingredients: [], steps: [] })];
+      const guardFilter = () => sample2.filter(r => { const t = r.tags || {}; return !("backpacking" === "backpacking" && !t.backpacking); });
+      let threw = false; try { guardFilter(); } catch { threw = true; }
+      assert("Filter safe when r.tags undefined", threw === false);
 
-    // Test 3: Shopping list scales with headcount
-    const scoutsN = 5; const map = new Map();
-    addQty(map, "mix", 0.5 * scoutsN, "cup");
-    const entry = Array.from(map.values())[0];
-    assert("Scaling: 0.5 cup * 5 = 2.5 cups", Math.abs(entry.qty - 2.5) < 1e-9 && entry.unit === "cup");
+      // Test 3: Shopping list scales
+      const scoutsN = 5; const map = new Map();
+      addQty(map, "mix", 0.5 * scoutsN, "cup");
+      const entry = Array.from(map.values())[0];
+      assert("Scaling: 0.5 cup * 5 = 2.5 cups", Math.abs(entry.qty - 2.5) < 1e-9 && entry.unit === "cup");
 
-    // Test 4: Favorites sort preference
-    const pool = [ { id: "1" }, { id: "2" } ];
-    const favs = new Set(["2"]);
-    const sorted = [...pool].sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
-    assert("Favorites sorted first", sorted[0].id === "2");
+      // Test 4: Favorites sort preference
+      const pool = [{ id: "1" }, { id: "2" }];
+      const favs = new Set(["2"]);
+      const sorted = [...pool].sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
+      assert("Favorites sorted first", sorted[0].id === "2");
 
-    // Test 5: Path builder sanity (only if db exists)
-    try {
+      // Test 5: Path builder sanity
       const p = troopPaths("T194", "abc");
       assert("Path builder returns objects when troopId provided", !!p.recipesCol && !!p.settingsDoc && !!p.userDoc);
-    } catch {
-      assert("Path builder returns objects when troopId provided", true); // don’t fail hard if db isn’t initialized in local-only mode
+    } catch (e) {
+      results.push({ name: `Diagnostics threw: ${e?.message || e}`, pass: false });
     }
-
     setTestResults(results);
-  } catch (e) {
+  })();
+}, [testsOpen]);
     // Never crash the UI over diagnostics
     setTestResults([{ name: "Diagnostics failed to run", pass: false }]);
     // Optionally log to console:
