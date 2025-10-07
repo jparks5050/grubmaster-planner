@@ -1,1 +1,5 @@
-@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root { color-scheme: light; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
