@@ -684,7 +684,6 @@ export default function GrubmasterPlanner() {
     if (!auth) { alert("Firebase not configured. Using local-only mode."); return; }
     await signInWithRedirect(auth, new GoogleAuthProvider());
   }
-    await signInWithRedirect(auth, new GoogleAuthProvider());
   };
   const doSignOut = async () => { if (!auth) return; await signOut(auth); };
 
