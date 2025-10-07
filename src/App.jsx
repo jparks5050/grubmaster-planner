@@ -1,5 +1,3 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-
 // Scouts BSA Grubmaster Planner — cloud-ready version
 // Tailwind for styling; Print-to-PDF via window.print().
 // Local fallback + Firebase Auth/Firestore sync so recipes are shared across your Troop.
@@ -15,45 +13,105 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 // VITE_FIREBASE_APP_ID=...
 // (Optionally) VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID
 
+// src/App.jsx
+import { useEffect, useState } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
   onAuthStateChanged,
-  signInWithRedirect,
   GoogleAuthProvider,
+  signInWithRedirect,
   signOut,
 } from "firebase/auth";
-import {
-  getFirestore,
-  enableIndexedDbPersistence,
-  collection,
-  doc,
-  onSnapshot,
-  addDoc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  serverTimestamp,
-  query,
-  orderBy,
-} from "firebase/firestore";
 
+// ✅ These are automatically pulled from your Vite environment (.env or Vercel settings)
 const firebaseConfig = {
-  apiKey: import.meta?.env?.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta?.env?.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta?.env?.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta?.env?.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  enableIndexedDbPersistence(db).catch(() => {}); // ignore if already enabled or unsupported
-} catch (e) {
-  // If env not provided in local dev, we continue with localStorage only.
+export default function App() {
+  // Track login state
+  const [authed, setAuthed] = useState(null); // null = loading, true = signed in, false = signed out
+  const [error, setError] = useState(null);
+
+  // ✅ Initialize Firebase & monitor auth state
+  useEffect(() => {
+    try {
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+
+      // Listen for login state changes
+      const unsubscribe = onAuthStateChanged(
+        auth,
+        (user) => {
+          setAuthed(!!user);
+        },
+        (e) => {
+          console.error("Auth listener error:", e);
+          setError(e);
+          setAuthed(false);
+        }
+      );
+
+      return unsubscribe; // cleanup
+    } catch (e) {
+      console.error("Firebase initialization error:", e);
+      setError(e);
+      setAuthed(false);
+    }
+  }, []);
+
+  // ✅ Conditional rendering
+  if (error) {
+    return (
+      <div style={{ padding: 24, color: "crimson" }}>
+        <h2>Auth error:</h2>
+        <pre>{String(error.message || error)}</pre>
+      </div>
+    );
+  }
+
+  if (authed === null) {
+    return <div style={{ padding: 24 }}>Loading Firebase auth…</div>;
+  }
+
+  if (!authed) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h1>Scouts BSA Grubmaster Planner</h1>
+        <p>Please sign in to continue.</p>
+        <button
+          onClick={() => {
+            const auth = getAuth();
+            const provider = new GoogleAuthProvider();
+            signInWithRedirect(auth, provider);
+          }}
+        >
+          Sign in with Google
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1>Welcome to the Grubmaster Planner!</h1>
+      <p>You are signed in.</p>
+      <button
+        onClick={() => {
+          const auth = getAuth();
+          signOut(auth);
+        }}
+      >
+        Sign out
+      </button>
+    </div>
+  );
 }
+
 
 // --- Utilities ---
 const uid = () => Math.random().toString(36).slice(2, 10);
