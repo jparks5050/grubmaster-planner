@@ -1025,4 +1025,3 @@ export default function GrubmasterPlanner() {
       </footer>
     </div>
   );
-}
