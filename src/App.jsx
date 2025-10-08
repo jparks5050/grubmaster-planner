@@ -489,7 +489,7 @@ const troopPaths = (troopId, uid) => ({
 });
 
 // --- Component ---
-export default function GrubmasterPlanner() {
+function GrubmasterPlanner() {
   const [user, setUser] = useState(null);
   const [authed, setAuthed] = useState(false);
   const [scouts, setScouts] = useState(8);
@@ -1199,7 +1199,12 @@ useEffect(() => {
       </footer>
     </div>
   );
-                                }                                 
+   // (Place this near the bottom of App.jsx, after GrubmasterPlanner is defined)
+
+function App() {
+  return <GrubmasterPlanner />;
+}
+                               
 
 // At the bottom of your returned JSX, add:
 <div style={{position:'fixed',bottom:8,right:8,fontSize:12,opacity:.7}}>
