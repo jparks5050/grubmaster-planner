@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// --- Firebase ---
+// --- Firebase (anonymous) ---
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -16,11 +16,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 
-// =========================
-// 🔧 Firebase config (Vite env)
-// =========================
-// Define in Vercel (or .env.local):
-// VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_APP_ID
+// ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -28,37 +24,27 @@ const firebaseCfg = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Singletons
 function getFirebase() {
   if (getApps().length === 0) initializeApp(firebaseCfg);
   return { auth: getAuth(), db: getFirestore() };
 }
 
-// ------------------
-// Local storage utils
-// ------------------
+// ---------- Small utils ----------
 const uid = () => Math.random().toString(36).slice(2, 10);
 const saveLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const loadLS = (k, d) => {
-  try {
-    const v = localStorage.getItem(k);
-    return v ? JSON.parse(v) : d;
-  } catch {
-    return d;
-  }
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; }
 };
 
-// ------------------
-// Normalizers/helpers
-// ------------------
+// Normalize recipe and keep missing keys truly missing (no forced defaults for dutchOven/diet)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
-  const defaultTags = { dutchOven: false, backpacking: false, car: false, canoe: false };
-  clean.tags = { ...defaultTags, ...(r?.tags || {}) };
+  clean.tags = { ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
   clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
   clean.steps = Array.isArray(r?.steps) ? r.steps : [];
-  clean.mealType = r?.mealType || "dinner";
+  clean.mealType = r?.mealType || "dinner";   // breakfast | lunch | dinner
+  clean.course = r?.course || "main";         // main | side | drink | dessert
   clean.name = r?.name || "Unnamed";
   clean.serves = r?.serves || 8;
   clean.id = r?.id || uid();
@@ -70,90 +56,102 @@ function addQty(map, key, qty = 0, unit = "") {
   map.set(k, { item: key, unit, qty: (map.get(k)?.qty || 0) + qty });
 }
 
-// ------------------
-// Seed data (local)
-// ------------------
+// ---------- Seed data (sample courses) ----------
 const SEED_RECIPES_RAW = [
+  // DINNER
   {
-    id: uid(),
-    name: "Dutch Oven Chicken & Veg Pot Pie",
-    mealType: "dinner",
-    serves: 8,
-    tags: { dutchOven: true, car: true },
-    diet: { alphaGalSafe: true },
+    id: uid(), name: "Chicken Pot Pie (DO)", mealType: "dinner", course: "main",
+    tags: { dutchOven: true, car: true }, diet: { alphaGalSafe: true },
     ingredients: [
-      { item: "boneless skinless chicken thigh", qtyPerPerson: 0.25, unit: "lb" },
+      { item: "boneless chicken thigh", qtyPerPerson: 0.25, unit: "lb" },
       { item: "frozen mixed vegetables", qtyPerPerson: 0.5, unit: "cup" },
       { item: "potatoes (diced)", qtyPerPerson: 0.3, unit: "lb" },
-      { item: "chicken gravy mix", qtyPerPerson: 0.3, unit: "packet" },
-      { item: "pre-made biscuit dough", qtyPerPerson: 1, unit: "biscuit" },
-      { item: "olive oil", qtyPerPerson: 0.25, unit: "tbsp" },
-      { item: "salt", qtyPerPerson: 0.1, unit: "tsp" },
-      { item: "pepper", qtyPerPerson: 0.1, unit: "tsp" },
+      { item: "gravy mix (chicken)", qtyPerPerson: 0.3, unit: "packet" },
+      { item: "biscuit dough", qtyPerPerson: 1, unit: "biscuit" }
     ],
-    steps: [
-      "Preheat dutch oven with coals (8 below, 16 above).",
-      "Sauté chicken in oil until browned.",
-      "Add potatoes, veg, gravy + water per packet; simmer.",
-      "Top with biscuit dough; bake 20–25 min, rotating lid halfway.",
-    ],
+    steps: ["Brown chicken", "Add veg + gravy per packet", "Top w/ biscuits and bake in DO"]
   },
   {
-    id: uid(),
-    name: "Backpacker Couscous Tuna Bowl",
-    mealType: "dinner",
-    serves: 6,
-    tags: { backpacking: true },
-    diet: { alphaGalSafe: true, dairyFree: true },
-    ingredients: [
-      { item: "instant couscous", qtyPerPerson: 0.5, unit: "cup" },
-      { item: "foil pouch tuna", qtyPerPerson: 0.5, unit: "pouch" },
-      { item: "olive oil", qtyPerPerson: 0.5, unit: "tbsp" },
-      { item: "lemon pepper seasoning", qtyPerPerson: 0.25, unit: "tsp" },
-    ],
-    steps: [
-      "Boil water (1:1 with couscous), stir in couscous, cover 5 min.",
-      "Fluff, add tuna, oil, seasoning.",
-    ],
+    id: uid(), name: "Campfire Corn", mealType: "dinner", course: "side",
+    tags: { car: true, canoe: true },
+    ingredients: [{ item: "corn on the cob", qtyPerPerson: 1, unit: "ear" }],
+    steps: ["Wrap corn in foil with butter/salt", "Roast over coals ~12–15 min"]
   },
   {
-    id: uid(),
-    name: "Dutch Oven Monkey Bread (Breakfast Treat)",
-    mealType: "breakfast",
-    serves: 10,
+    id: uid(), name: "Lemonade", mealType: "dinner", course: "drink",
+    tags: { car: true, canoe: true, backpacking: true },
+    ingredients: [{ item: "lemonade mix", qtyPerPerson: 0.5, unit: "scoop" }],
+    steps: ["Mix with water per instructions"]
+  },
+  {
+    id: uid(), name: "Dutch Oven Cobbler", mealType: "dinner", course: "dessert",
     tags: { dutchOven: true, car: true },
-    diet: {},
     ingredients: [
-      { item: "refrigerated biscuit dough", qtyPerPerson: 1, unit: "biscuit" },
-      { item: "sugar", qtyPerPerson: 1, unit: "tbsp" },
-      { item: "cinnamon", qtyPerPerson: 0.25, unit: "tsp" },
+      { item: "canned pie filling", qtyPerPerson: 0.4, unit: "cup" },
+      { item: "cake mix", qtyPerPerson: 0.1, unit: "box" },
       { item: "butter", qtyPerPerson: 0.5, unit: "tbsp" },
     ],
-    steps: [
-      "Preheat dutch oven (8 below, 14 above).",
-      "Quarter biscuits, toss in cinnamon sugar, dot with butter, bake 20–25 min.",
+    steps: ["Layer filling, dry mix, butter pats", "Bake in DO until bubbling + top browned"]
+  },
+
+  // LUNCH
+  {
+    id: uid(), name: "Chicken Caesar Wraps", mealType: "lunch", course: "main",
+    tags: { car: true, canoe: true }, diet: { alphaGalSafe: true },
+    ingredients: [
+      { item: "tortilla (10\")", qtyPerPerson: 1, unit: "ea" },
+      { item: "cooked chicken (diced)", qtyPerPerson: 0.25, unit: "lb" },
+      { item: "romaine", qtyPerPerson: 1, unit: "cup" },
+      { item: "Caesar dressing", qtyPerPerson: 1, unit: "tbsp" }
     ],
+    steps: ["Assemble wraps"]
+  },
+  {
+    id: uid(), name: "Chips", mealType: "lunch", course: "side",
+    tags: { car: true, canoe: true },
+    ingredients: [{ item: "chips", qtyPerPerson: 1, unit: "bag (snack)" }],
+    steps: ["Serve with wraps"]
+  },
+  {
+    id: uid(), name: "Water", mealType: "lunch", course: "drink",
+    tags: { car: true, canoe: true, backpacking: true },
+    ingredients: [{ item: "water", qtyPerPerson: 16, unit: "oz" }],
+    steps: ["Hydrate!"]
+  },
+
+  // BREAKFAST
+  {
+    id: uid(), name: "Oatmeal Pack", mealType: "breakfast", course: "main",
+    tags: { backpacking: true, car: true, canoe: true }, diet: { vegetarian: true, dairyFree: true },
+    ingredients: [{ item: "instant oatmeal packet", qtyPerPerson: 1.5, unit: "packet" }],
+    steps: ["Add hot water per packet", "Wait 2–3 min"]
+  },
+  {
+    id: uid(), name: "Banana", mealType: "breakfast", course: "side",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "banana", qtyPerPerson: 1, unit: "ea" }],
+    steps: ["Serve with oatmeal"]
+  },
+  {
+    id: uid(), name: "Hot Cocoa", mealType: "breakfast", course: "drink",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "cocoa mix", qtyPerPerson: 1, unit: "packet" }],
+    steps: ["Add to hot water and stir"]
   },
 ];
 const SEED_RECIPES = SEED_RECIPES_RAW.map(normalizeRecipe);
 
-// ------------------
-// Small UI helper
-// ------------------
+// ---------- Small UI helpers ----------
 const Pill = ({ children }) => (
   <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">{children}</span>
 );
 
-// ------------------
-// Export / Import JSON
-// ------------------
+// ---------- Export / Import ----------
 const downloadJSON = (filename, data) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 };
 
@@ -161,7 +159,7 @@ const buildRecipesExport = (recipes, meta = {}) => ({
   $schema: "https://example.com/schemas/grubmaster/recipes-v1.json",
   exporter: {
     app: "Scouts BSA Grubmaster Planner",
-    version: "1.0.0",
+    version: "2.0.0",
     exportedAt: new Date().toISOString(),
     ...meta,
   },
@@ -169,6 +167,7 @@ const buildRecipesExport = (recipes, meta = {}) => ({
     id: r.id || uid(),
     name: r.name || "Unnamed",
     mealType: r.mealType || "dinner",
+    course: r.course || "main",
     serves: r.serves || 8,
     tags: r.tags || {},
     diet: r.diet || {},
@@ -177,59 +176,32 @@ const buildRecipesExport = (recipes, meta = {}) => ({
   })),
 });
 
-// ------------------
-// Main App Component
-// ------------------
+// ======================================================
+// Main App
+// ======================================================
 export default function App() {
   // Firebase singletons
   const { auth, db } = useMemo(() => getFirebase(), []);
 
-  // Boot/auth state
+  // Boot/auth
   const [phase, setPhase] = useState("boot"); // boot | signed-in | error
   const [err, setErr] = useState(null);
   const [user, setUser] = useState(null);
-  const authed = !!user; // anonymous users count as authed for Firestore rules
+  const authed = !!user;
 
-  // Env status (debug footer)
-  const envStatus = useMemo(
-    () => ({
-      apiKey: !!firebaseCfg.apiKey,
-      authDomain: !!firebaseCfg.authDomain,
-      projectId: !!firebaseCfg.projectId,
-      appId: !!firebaseCfg.appId,
-    }),
-    []
-  );
-
-  // --- Anonymous auth bootstrap ---
   useEffect(() => {
     const unsub = onAuthStateChanged(
       auth,
-      (u) => {
-        setUser(u || null);
-        setPhase("signed-in");
-      },
-      (e) => {
-        console.error("[Auth] error", e);
-        setErr(e);
-        setPhase("error");
-      }
+      (u) => { setUser(u || null); setPhase("signed-in"); },
+      (e) => { console.error("[Auth] error", e); setErr(e); setPhase("error"); }
     );
-
     if (!auth.currentUser) {
-      signInAnonymously(auth).catch((e) => {
-        console.error("Anonymous sign-in failed", e);
-        setErr(e);
-        setPhase("error");
-      });
+      signInAnonymously(auth).catch((e) => { console.error("Anon sign-in failed", e); setErr(e); setPhase("error"); });
     }
-
     return () => unsub();
   }, [auth]);
 
-  // ------------------
-  // Troop + Cloud paths
-  // ------------------
+  // Troop (enables Firestore sync)
   const [troopId, setTroopId] = useState(loadLS("gm_troop_id", ""));
   useEffect(() => saveLS("gm_troop_id", troopId), [troopId]);
 
@@ -241,11 +213,9 @@ export default function App() {
     return { recipesCol, settingsDoc, userDoc };
   }, [db, troopId, user]);
 
-  // ------------------
   // Core UI state
-  // ------------------
   const [scouts, setScouts] = useState(8);
-  const [meals, setMeals] = useState({ breakfast: 2, lunch: 2, dinner: 2 });
+  const [meals, setMeals] = useState({ breakfast: 1, lunch: 1, dinner: 1 });
 
   const CAMP_TYPES = [
     { key: "backpacking", label: "Backpacking" },
@@ -253,8 +223,8 @@ export default function App() {
     { key: "canoe", label: "Canoe/float" },
   ];
   const [campType, setCampType] = useState("car");
-  const [includeDutchOven, setIncludeDutchOven] = useState(true);
 
+  // ⬇️ As requested: DO NOT default any food restrictions
   const DIETS = [
     { key: "alphaGalSafe", label: "Alpha-gal safe (no mammal products)" },
     { key: "vegetarian", label: "Vegetarian" },
@@ -263,9 +233,10 @@ export default function App() {
     { key: "nutFree", label: "Nut-free" },
     { key: "dairyFree", label: "Dairy-free" },
   ];
-  const [diet, setDiet] = useState({ alphaGalSafe: true });
+  const [diet, setDiet] = useState({}); // <- no defaults checked
 
-  // Recipes, names, favorites
+  // ⬇️ Do not “preselect” dutch oven anywhere (filters use tags strictly; draft doesn’t default dutchOven)
+  // Recipes/names/favorites
   const [recipes, setRecipes] = useState(() => {
     const ls = loadLS("gm_recipes", SEED_RECIPES);
     return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED_RECIPES;
@@ -273,14 +244,13 @@ export default function App() {
   const [names, setNames] = useState(loadLS("gm_names", ["Patrol A", "Patrol B", "Patrol C"]));
   const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
 
-  // Persist local always
   useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
   useEffect(() => saveLS("gm_names", names), [names]);
   useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
 
-  // --- Cloud sync subscriptions (when authed + troopId) ---
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
+  // Cloud subscriptions (when possible)
   useEffect(() => {
     if (!authed || !troopId || !paths.recipesCol) {
       setSyncInfo((s) => ({ ...s, status: "local-only" }));
@@ -288,7 +258,6 @@ export default function App() {
     }
     const subs = [];
 
-    // Recipes
     subs.push(
       onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
         const arr = snap.docs.map((d) => normalizeRecipe({ id: d.id, ...d.data() }));
@@ -297,7 +266,6 @@ export default function App() {
       })
     );
 
-    // Settings (names)
     if (paths.settingsDoc) {
       subs.push(
         onSnapshot(paths.settingsDoc, (d) => {
@@ -306,8 +274,6 @@ export default function App() {
         })
       );
     }
-
-    // Per-user favorites
     if (paths.userDoc) {
       subs.push(
         onSnapshot(paths.userDoc, (d) => {
@@ -316,11 +282,10 @@ export default function App() {
         })
       );
     }
-
     return () => subs.forEach((u) => u && u());
   }, [authed, troopId, paths.recipesCol, paths.settingsDoc, paths.userDoc]);
 
-  // --- Save troop names to cloud when changed ---
+  // Save names to cloud when changed
   useEffect(() => {
     const save = async () => {
       if (!authed || !troopId || !paths.settingsDoc) return;
@@ -330,52 +295,69 @@ export default function App() {
     save();
   }, [names, authed, troopId, paths.settingsDoc]);
 
-  // --- Filters ---
+  // Filters
   const filteredRecipes = useMemo(() => {
     return recipes.filter((r) => {
       const t = r.tags || {};
       if (campType === "backpacking" && !t.backpacking) return false;
       if (campType === "car" && !(t.car || t.backpacking || t.canoe)) return false;
       if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
-      if (!includeDutchOven && t.dutchOven) return false;
+
+      // diet (none selected by default)
       for (const k of Object.keys(diet)) if (diet[k] && !r.diet?.[k]) return false;
       return true;
     });
-  }, [recipes, campType, diet, includeDutchOven]);
+  }, [recipes, campType, diet]);
 
-  // --- Auto menu ---
-  const [menu, setMenu] = useState([]); // [{id, recipeId, mealType}]
+  // -----------------------------
+  // Auto Menu with Courses
+  // For each meal occurrence: main + side + drink (+ dessert if dinner)
+  // -----------------------------
+  const COURSE_ORDER = ["main", "side", "drink"]; // always included
+  const [menu, setMenu] = useState([]); // [{ id, mealType, course, recipeId }]
   useEffect(() => {
     const need = [];
     ["breakfast", "lunch", "dinner"].forEach((mt) => {
-      for (let i = 0; i < (meals[mt] || 0); i++) need.push(mt);
+      for (let i = 0; i < (meals[mt] || 0); i++) {
+        const courses = [...COURSE_ORDER];
+        if (mt === "dinner") courses.push("dessert");
+        courses.forEach((course) => need.push({ mt, course }));
+      }
     });
 
-    const byMeal = (mt) => filteredRecipes.filter((r) => r.mealType === mt);
+    const byMealCourse = (mt, course) =>
+      filteredRecipes.filter((r) => r.mealType === mt && r.course === course);
+
     const chosen = [];
     const favIds = new Set(favorites);
     const used = new Set();
 
-    for (const mt of need) {
-      const pool = byMeal(mt).sort(
+    for (const slot of need) {
+      const pool = byMealCourse(slot.mt, slot.course).sort(
         (a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))
       );
-      const pick = pool.find((r) => !used.has(r.id)) || pool[0];
+      const pick = pool.find((r) => !used.has(`${slot.mt}:${slot.course}:${r.id}`)) || pool[0];
       if (pick) {
-        used.add(pick.id);
-        chosen.push({ id: uid(), recipeId: pick.id, mealType: mt });
+        used.add(`${slot.mt}:${slot.course}:${pick.id}`);
+        chosen.push({ id: uid(), mealType: slot.mt, course: slot.course, recipeId: pick.id });
+      } else {
+        // placeholder (no recipe found)
+        chosen.push({ id: uid(), mealType: slot.mt, course: slot.course, recipeId: null });
       }
     }
+
     setMenu(chosen);
   }, [filteredRecipes, meals, favorites]);
 
-  // --- Shopping list ---
+  // Shopping list (from all picked menu recipes)
   const shopping = useMemo(() => {
     const map = new Map();
-    const sel = menu.map((m) => recipes.find((r) => r.id === m.recipeId)).filter(Boolean);
-    sel.forEach((r) => {
+    const selected = menu
+      .map((m) => recipes.find((r) => r.id === m.recipeId))
+      .filter(Boolean);
+    selected.forEach((r) => {
       r.ingredients.forEach((ing) => {
-        addQty(map, ing.item, ing.qtyPerPerson * scouts, ing.unit);
+        addQty(map, ing.item, (ing.qtyPerPerson || 0) * scouts, ing.unit || "");
       });
     });
     addQty(map, "paper towels", Math.ceil(scouts / 4), "roll");
@@ -383,10 +365,12 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => a.item.localeCompare(b.item));
   }, [menu, recipes, scouts]);
 
-  // --- Duty roster ---
+  // Duty roster
   const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
   const duty = useMemo(() => {
-    const mealsFlat = menu.map((m, idx) => ({ ...m, idx }));
+    const mealsFlat = menu
+      .filter((m) => m.course === "main") // roster per meal occurrence; use "main" entries as rows
+      .map((m, idx) => ({ ...m, idx }));
     return mealsFlat.map((m, i) => {
       const assignment = {};
       roles.forEach((role, rIdx) => {
@@ -397,7 +381,7 @@ export default function App() {
     });
   }, [menu, names]);
 
-  // --- Print ---
+  // Print
   const printRef = useRef(null);
   const handlePrint = () => {
     const w = window.open("", "_blank");
@@ -411,6 +395,7 @@ export default function App() {
         table{border-collapse:collapse;width:100%}
         th,td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:12px}
         .muted{color:#555}
+        .cap{text-transform:capitalize}
       </style></head><body>`);
     docW.write(printRef.current?.innerHTML || "");
     docW.write("</body></html>");
@@ -419,16 +404,13 @@ export default function App() {
     w.print();
   };
 
-  // --- Import/Export ---
+  // Import/Export
   const importInputRef = useRef(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState("");
 
   const handleExportJSON = () => {
-    const payload = buildRecipesExport(recipes, {
-      troopId: troopId || "local",
-      user: user?.uid || "anon",
-    });
+    const payload = buildRecipesExport(recipes, { troopId: troopId || "local", user: user?.uid || "anon" });
     downloadJSON(`recipes-export-${new Date().toISOString()}.json`, payload);
   };
 
@@ -436,16 +418,15 @@ export default function App() {
 
   const handleImportJSON = async (file) => {
     if (!file) return;
-    setImportBusy(true);
-    setImportMsg("");
+    setImportBusy(true); setImportMsg("");
     try {
       const text = await file.text();
       const data = JSON.parse(text);
       const arr = Array.isArray(data?.recipes) ? data.recipes : Array.isArray(data) ? data : null;
       if (!arr) throw new Error("Invalid file: expected { recipes: [...] } or an array.");
-
-      // Simple local upsert
       const incoming = arr.map(normalizeRecipe);
+
+      // Local upsert
       setRecipes((prev) => {
         const map = new Map(prev.map((r) => [r.id, r]));
         incoming.forEach((r) => map.set(r.id, r));
@@ -456,11 +437,7 @@ export default function App() {
       if (authed && troopId && paths.recipesCol) {
         await Promise.all(
           incoming.map((r) =>
-            setDoc(
-              doc(paths.recipesCol, r.id),
-              { ...r, updatedAt: serverTimestamp() },
-              { merge: true }
-            )
+            setDoc(doc(paths.recipesCol, r.id), { ...r, updatedAt: serverTimestamp() }, { merge: true })
           )
         );
       }
@@ -474,22 +451,20 @@ export default function App() {
     }
   };
 
-  // --- Add recipe (local + cloud when available) ---
+  // Add recipe (no default dutch oven or diet selections)
   const [draft, setDraft] = useState({
     name: "",
     mealType: "dinner",
+    course: "main",
     serves: 8,
-    tags: { car: true },
-    diet: {},
+    tags: {},   // <- empty: no dutchOven default
+    diet: {},   // <- empty: no restrictions default
     ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
     steps: [""],
   });
 
   const addIngredientRow = () =>
-    setDraft((d) => ({
-      ...d,
-      ingredients: [...d.ingredients, { item: "", qtyPerPerson: 1, unit: "ea" }],
-    }));
+    setDraft((d) => ({ ...d, ingredients: [...d.ingredients, { item: "", qtyPerPerson: 1, unit: "ea" }] }));
   const addStepRow = () => setDraft((d) => ({ ...d, steps: [...d.steps, ""] }));
 
   const saveRecipe = async () => {
@@ -497,11 +472,7 @@ export default function App() {
     const newR = normalizeRecipe({ ...draft, id: uid() });
 
     if (authed && troopId && paths.recipesCol) {
-      await addDoc(paths.recipesCol, {
-        ...newR,
-        createdAt: serverTimestamp(),
-        createdBy: user?.uid || "anon",
-      });
+      await addDoc(paths.recipesCol, { ...newR, createdAt: serverTimestamp(), createdBy: user?.uid || "anon" });
       setSyncInfo({ status: "online", last: new Date().toISOString() });
     } else {
       setRecipes((r) => [newR, ...r]);
@@ -510,8 +481,9 @@ export default function App() {
     setDraft({
       name: "",
       mealType: "dinner",
+      course: "main",
       serves: 8,
-      tags: { car: true },
+      tags: {},
       diet: {},
       ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
       steps: [""],
@@ -523,7 +495,6 @@ export default function App() {
     await setDoc(paths.userDoc, { favorites: arr }, { merge: true });
     setSyncInfo({ status: "online", last: new Date().toISOString() });
   };
-
   const toggleFavorite = async (id) => {
     setFavorites((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
@@ -532,33 +503,21 @@ export default function App() {
     });
   };
 
-  // --- UI computed helpers ---
-  const disableSave = !troopId; // local saves allowed; Troop ID enables cloud sync
-
-  // --- Boot/Error screens ---
+  // Boot/Error
   if (phase === "boot") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-slate-700">
-        Initializing…
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center text-slate-700">Initializing…</div>;
   }
-
   if (phase === "error") {
     return (
       <div className="min-h-screen p-6 text-slate-800">
         <h1 className="text-xl font-semibold mb-2">⚠️ Firebase error</h1>
-        <pre className="p-3 bg-slate-100 rounded border overflow-auto">
-          {String(err?.message || err)}
-        </pre>
-        <p className="mt-2 text-sm">
-          Check Vercel env vars (<code>VITE_FIREBASE_*</code>) and enable Anonymous Sign-in in Firebase Auth.
-        </p>
+        <pre className="p-3 bg-slate-100 rounded border overflow-auto">{String(err?.message || err)}</pre>
+        <p className="mt-2 text-sm">Check Vercel env vars and enable Anonymous Sign-in in Firebase Auth.</p>
       </div>
     );
   }
 
-  // --- Main UI ---
+  // UI
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900">
       <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
@@ -613,14 +572,9 @@ export default function App() {
                 : "text-slate-500"
             }
           >
-            {syncInfo.status}{" "}
-            {syncInfo.last ? `• ${new Date(syncInfo.last).toLocaleTimeString()}` : ""}
+            {syncInfo.status} {syncInfo.last ? `• ${new Date(syncInfo.last).toLocaleTimeString()}` : ""}
           </span>
-          {!troopId && (
-            <span className="ml-3 text-amber-700">
-              Enter a Troop ID to share recipes across your troop (cloud sync).
-            </span>
-          )}
+          {!troopId && <span className="ml-3 text-amber-700">Enter a Troop ID to share recipes across your troop.</span>}
           {importBusy && <span className="ml-3">Importing…</span>}
           {importMsg && <span className="ml-3">{importMsg}</span>}
         </div>
@@ -634,9 +588,7 @@ export default function App() {
 
             <label className="block text-sm mb-1">Number of Scouts</label>
             <input
-              type="number"
-              min={1}
-              value={scouts}
+              type="number" min={1} value={scouts}
               onChange={(e) => setScouts(Math.max(1, Number(e.target.value) || 1))}
               className="w-full border rounded-lg px-3 py-2 mb-3"
             />
@@ -646,14 +598,9 @@ export default function App() {
                 <div key={mt}>
                   <label className="block text-sm capitalize">{mt}</label>
                   <input
-                    type="number"
-                    min={0}
-                    value={meals[mt]}
+                    type="number" min={0} value={meals[mt]}
                     onChange={(e) =>
-                      setMeals((m) => ({
-                        ...m,
-                        [mt]: Math.max(0, Number(e.target.value) || 0),
-                      }))
+                      setMeals((m) => ({ ...m, [mt]: Math.max(0, Number(e.target.value) || 0) }))
                     }
                     className="w-full border rounded-lg px-3 py-2"
                   />
@@ -664,29 +611,13 @@ export default function App() {
             <label className="block text-sm mt-3">Camp Type</label>
             <select
               value={campType}
-              onChange={(e) => {
-                setCampType(e.target.value);
-                if (e.target.value === "backpacking") setIncludeDutchOven(false);
-              }}
+              onChange={(e) => setCampType(e.target.value)}
               className="w-full border rounded-lg px-3 py-2"
             >
               {CAMP_TYPES.map((ct) => (
-                <option key={ct.key} value={ct.key}>
-                  {ct.label}
-                </option>
+                <option key={ct.key} value={ct.key}>{ct.label}</option>
               ))}
             </select>
-
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                id="dutch"
-                type="checkbox"
-                checked={includeDutchOven}
-                onChange={(e) => setIncludeDutchOven(e.target.checked)}
-                disabled={campType === "backpacking"}
-              />
-              <label htmlFor="dutch">Include Dutch oven recipes</label>
-            </div>
 
             <div className="mt-3">
               <div className="text-sm font-medium mb-1">Dietary Restrictions</div>
@@ -694,11 +625,8 @@ export default function App() {
                 {DIETS.map((d) => (
                   <label key={d.key} className="inline-flex items-center gap-2">
                     <input
-                      type="checkbox"
-                      checked={!!diet[d.key]}
-                      onChange={(e) =>
-                        setDiet((prev) => ({ ...prev, [d.key]: e.target.checked }))
-                      }
+                      type="checkbox" checked={!!diet[d.key]}
+                      onChange={(e) => setDiet((prev) => ({ ...prev, [d.key]: e.target.checked }))}
                     />
                     <span>{d.label}</span>
                   </label>
@@ -716,38 +644,29 @@ export default function App() {
               value={troopId}
               onChange={(e) => setTroopId(e.target.value.trim())}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              All anonymous-auth users with this Troop ID will share recipes.
-            </p>
+            <p className="text-xs text-slate-500 mt-1">All anonymous-auth users with this Troop ID will share recipes.</p>
             <h3 className="text-sm font-medium mt-3">Patrols / Names (shared)</h3>
             <textarea
-              className="w-full border rounded-lg px-3 py-2"
-              rows={4}
+              className="w-full border rounded-lg px-3 py-2" rows={4}
               value={names.join("\n")}
               onChange={(e) =>
                 setNames(
-                  e.target.value
-                    .split(/\n+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean)
+                  e.target.value.split(/\n+/).map((s) => s.trim()).filter(Boolean)
                 )
               }
             />
-            <p className="text-xs text-slate-500 mt-1">
-              One line per name or patrol. Saved troop-wide when Troop ID is set.
-            </p>
+            <p className="text-xs text-slate-500 mt-1">One line per name or patrol. Saved troop-wide when Troop ID is set.</p>
           </div>
 
           <div className="p-4 bg-white rounded-2xl shadow">
             <h2 className="text-lg font-semibold mb-3">Add Recipe</h2>
             <div className="grid grid-cols-1 gap-2">
               <input
-                placeholder="Recipe name"
-                className="border rounded-lg px-3 py-2"
-                value={draft.name}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder="Recipe name" className="border rounded-lg px-3 py-2"
+                value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
               />
-              <div className="grid grid-cols-3 gap-2">
+
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-sm">Meal</label>
                   <select
@@ -761,16 +680,28 @@ export default function App() {
                   </select>
                 </div>
                 <div>
+                  <label className="text-sm">Course</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={draft.course}
+                    onChange={(e) => setDraft((d) => ({ ...d, course: e.target.value }))}
+                  >
+                    <option value="main">Main</option>
+                    <option value="side">Side</option>
+                    <option value="drink">Drink</option>
+                    <option value="dessert">Dessert</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
                   <label className="text-sm">Serves</label>
                   <input
-                    type="number"
-                    className="w-full border rounded-lg px-3 py-2"
+                    type="number" className="w-full border rounded-lg px-3 py-2"
                     value={draft.serves}
                     onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        serves: Math.max(1, Number(e.target.value) || 1),
-                      }))
+                      setDraft((d) => ({ ...d, serves: Math.max(1, Number(e.target.value) || 1) }))
                     }
                   />
                 </div>
@@ -779,52 +710,27 @@ export default function App() {
                   <div className="flex gap-2 items-center text-sm">
                     <label className="inline-flex items-center gap-1">
                       <input
-                        type="checkbox"
-                        checked={!!draft.tags.backpacking}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...d,
-                            tags: { ...d.tags, backpacking: e.target.checked },
-                          }))
-                        }
-                      />
-                      Backpacking
+                        type="checkbox" checked={!!draft.tags.backpacking}
+                        onChange={(e) => setDraft((d) => ({ ...d, tags: { ...d.tags, backpacking: e.target.checked } }))}
+                      />Backpacking
                     </label>
                     <label className="inline-flex items-center gap-1">
                       <input
-                        type="checkbox"
-                        checked={!!draft.tags.car}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...d, tags: { ...d.tags, car: e.target.checked } }))
-                        }
-                      />
-                      Car
+                        type="checkbox" checked={!!draft.tags.car}
+                        onChange={(e) => setDraft((d) => ({ ...d, tags: { ...d.tags, car: e.target.checked } }))}
+                      />Car
                     </label>
                     <label className="inline-flex items-center gap-1">
                       <input
-                        type="checkbox"
-                        checked={!!draft.tags.dutchOven}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...d,
-                            tags: { ...d.tags, dutchOven: e.target.checked },
-                          }))
-                        }
-                      />
-                      Dutch
+                        type="checkbox" checked={!!draft.tags.dutchOven}
+                        onChange={(e) => setDraft((d) => ({ ...d, tags: { ...d.tags, dutchOven: e.target.checked } }))}
+                      />Dutch
                     </label>
                     <label className="inline-flex items-center gap-1">
                       <input
-                        type="checkbox"
-                        checked={!!draft.tags.canoe}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...d,
-                            tags: { ...d.tags, canoe: e.target.checked },
-                          }))
-                        }
-                      />
-                      Canoe
+                        type="checkbox" checked={!!draft.tags.canoe}
+                        onChange={(e) => setDraft((d) => ({ ...d, tags: { ...d.tags, canoe: e.target.checked } }))}
+                      />Canoe
                     </label>
                   </div>
                 </div>
@@ -836,14 +742,8 @@ export default function App() {
                   {DIETS.map((dk) => (
                     <label key={dk.key} className="inline-flex items-center gap-1">
                       <input
-                        type="checkbox"
-                        checked={!!draft.diet[dk.key]}
-                        onChange={(e) =>
-                          setDraft((d) => ({
-                            ...d,
-                            diet: { ...d.diet, [dk.key]: e.target.checked },
-                          }))
-                        }
+                        type="checkbox" checked={!!draft.diet[dk.key]}
+                        onChange={(e) => setDraft((d) => ({ ...d, diet: { ...d.diet, [dk.key]: e.target.checked } }))}
                       />
                       {dk.label.split(" (")[0]}
                     </label>
@@ -857,72 +757,53 @@ export default function App() {
                   <div key={i} className="grid grid-cols-5 gap-2 mt-1">
                     <input
                       className="col-span-3 border rounded-lg px-2 py-1"
-                      placeholder="item"
-                      value={ing.item}
+                      placeholder="item" value={ing.item}
                       onChange={(e) =>
                         setDraft((d) => {
-                          const a = [...d.ingredients];
-                          a[i] = { ...a[i], item: e.target.value };
+                          const a = [...d.ingredients]; a[i] = { ...a[i], item: e.target.value };
                           return { ...d, ingredients: a };
                         })
                       }
                     />
                     <input
-                      type="number"
-                      step="0.05"
-                      className="border rounded-lg px-2 py-1"
-                      placeholder="qty"
-                      value={ing.qtyPerPerson}
+                      type="number" step="0.05" className="border rounded-lg px-2 py-1"
+                      placeholder="qty" value={ing.qtyPerPerson}
                       onChange={(e) =>
                         setDraft((d) => {
-                          const a = [...d.ingredients];
-                          a[i] = {
-                            ...a[i],
-                            qtyPerPerson: Number(e.target.value) || 0,
-                          };
+                          const a = [...d.ingredients]; a[i] = { ...a[i], qtyPerPerson: Number(e.target.value) || 0 };
                           return { ...d, ingredients: a };
                         })
                       }
                     />
                     <input
-                      className="border rounded-lg px-2 py-1"
-                      placeholder="unit"
-                      value={ing.unit}
+                      className="border rounded-lg px-2 py-1" placeholder="unit" value={ing.unit}
                       onChange={(e) =>
                         setDraft((d) => {
-                          const a = [...d.ingredients];
-                          a[i] = { ...a[i], unit: e.target.value };
+                          const a = [...d.ingredients]; a[i] = { ...a[i], unit: e.target.value };
                           return { ...d, ingredients: a };
                         })
                       }
                     />
                   </div>
                 ))}
-                <button onClick={addIngredientRow} className="mt-2 text-sm px-2 py-1 rounded border">
-                  + Ingredient
-                </button>
+                <button onClick={addIngredientRow} className="mt-2 text-sm px-2 py-1 rounded border">+ Ingredient</button>
               </div>
 
               <div>
                 <div className="text-sm font-medium">Steps</div>
                 {draft.steps.map((st, i) => (
                   <input
-                    key={i}
-                    className="w-full border rounded-lg px-2 py-1 mt-1"
-                    placeholder={`Step ${i + 1}`}
-                    value={st}
+                    key={i} className="w-full border rounded-lg px-2 py-1 mt-1"
+                    placeholder={`Step ${i + 1}`} value={st}
                     onChange={(e) =>
                       setDraft((d) => {
-                        const a = [...d.steps];
-                        a[i] = e.target.value;
+                        const a = [...d.steps]; a[i] = e.target.value;
                         return { ...d, steps: a };
                       })
                     }
                   />
                 ))}
-                <button onClick={addStepRow} className="mt-2 text-sm px-2 py-1 rounded border">
-                  + Step
-                </button>
+                <button onClick={addStepRow} className="mt-2 text-sm px-2 py-1 rounded border">+ Step</button>
               </div>
 
               <div className="flex items-center justify-between">
@@ -931,10 +812,8 @@ export default function App() {
                 </div>
                 <button
                   onClick={saveRecipe}
-                  className={`px-3 py-1.5 rounded-lg text-white ${
-                    disableSave ? "bg-slate-400" : "bg-emerald-600 hover:bg-emerald-700"
-                  }`}
-                  title={disableSave ? "Tip: set a Troop ID to sync to cloud" : ""}
+                  className={`px-3 py-1.5 rounded-lg text-white ${troopId ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-400"}`}
+                  title={troopId ? "" : "Tip: set a Troop ID to sync to cloud"}
                 >
                   Save Recipe
                 </button>
@@ -945,76 +824,85 @@ export default function App() {
 
         {/* Right column: Planner */}
         <section className="md:col-span-2 space-y-6">
+          {/* Menu */}
           <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Menu (auto-generated)</h2>
-            <div className="grid md:grid-cols-2 gap-3">
-              {menu.length === 0 && (
-                <div className="text-slate-500">No meals selected. Increase counts on the left.</div>
-              )}
-              {menu.map((m) => {
-                const r = recipes.find((x) => x.id === m.recipeId);
-                const fav = r ? favorites.includes(r.id) : false;
-                return (
-                  <div key={m.id} className="border rounded-xl p-3 flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm uppercase tracking-wide text-slate-500">{m.mealType}</div>
-                      <button
-                        disabled={!r}
-                        className={`text-xs px-2 py-0.5 rounded-full border ${fav ? "bg-yellow-100 border-yellow-300" : ""}`}
-                        onClick={() => r && toggleFavorite(r.id)}
-                      >
-                        {fav ? "★ Favorite" : "☆ Favorite"}
-                      </button>
-                    </div>
-                    <div className="text-base font-semibold">{r?.name || "Pick a recipe"}</div>
-                    <div className="flex gap-2 flex-wrap">
-                      {r?.tags?.dutchOven && <Pill>Dutch oven</Pill>}
-                      {r?.tags?.backpacking && <Pill>Backpacking</Pill>}
-                      {r?.tags?.car && <Pill>Car</Pill>}
-                      {r?.tags?.canoe && <Pill>Canoe</Pill>}
-                    </div>
-                    <details className="text-sm">
-                      <summary className="cursor-pointer select-none">Ingredients & Steps</summary>
-                      <div className="mt-2">
-                        <div className="font-medium mb-1">Ingredients (scaled for {scouts})</div>
-                        <ul className="list-disc ml-5">
-                          {r?.ingredients.map((ing, idx) => (
-                            <li key={idx}>
-                              {ing.item}: {(ing.qtyPerPerson * scouts).toFixed(2)} {ing.unit}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="font-medium mt-2">Steps</div>
-                        <ol className="list-decimal ml-5">
-                          {r?.steps.map((s, i) => (
-                            <li key={i}>{s}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    </details>
-                  </div>
+            <h2 className="text-lg font-semibold mb-3">Menu (auto-generated by course)</h2>
+            {["breakfast", "lunch", "dinner"].map((mt) => {
+              const courses = mt === "dinner" ? [...COURSE_ORDER, "dessert"] : COURSE_ORDER;
+              const rows = menu.filter((m) => m.mealType === mt);
+              if (rows.length === 0) return null;
+
+              // Group each “occurrence” of the meal into course slots in order
+              const perOccurrence = [];
+              for (let i = 0; i < (meals[mt] || 0); i++) {
+                const slice = courses.map((course) =>
+                  rows.find((r, idx) => r.course === course && Math.floor(idx / courses.length) === i)
                 );
-              })}
-            </div>
+                perOccurrence.push(slice);
+              }
+
+              return (
+                <div key={mt} className="mb-5">
+                  <div className="text-base font-semibold capitalize mb-2">{mt}</div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {perOccurrence.map((occ, occIdx) => (
+                      <div key={occIdx} className="border rounded-xl p-3 space-y-2">
+                        {occ.map((slot, j) => {
+                          const course = courses[j];
+                          const r = slot?.recipeId ? recipes.find((x) => x.id === slot.recipeId) : null;
+                          const fav = r ? favorites.includes(r.id) : false;
+                          return (
+                            <div key={j} className="border rounded-lg p-2">
+                              <div className="flex items-center justify-between">
+                                <div className="text-xs uppercase tracking-wide text-slate-500">{course}</div>
+                                {!!r && (
+                                  <button
+                                    className={`text-xs px-2 py-0.5 rounded-full border ${fav ? "bg-yellow-100 border-yellow-300" : ""}`}
+                                    onClick={() => toggleFavorite(r.id)}
+                                  >
+                                    {fav ? "★ Fav" : "☆ Fav"}
+                                  </button>
+                                )}
+                              </div>
+                              <div className="text-sm font-semibold mt-1">{r?.name || "—"}</div>
+                              {r && (
+                                <div className="flex gap-2 flex-wrap mt-1 text-xs">
+                                  {r.tags?.dutchOven && <Pill>DO</Pill>}
+                                  {r.tags?.backpacking && <Pill>Backpacking</Pill>}
+                                  {r.tags?.car && <Pill>Car</Pill>}
+                                  {r.tags?.canoe && <Pill>Canoe</Pill>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
+          {/* Library */}
           <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Recipes Library ({filteredRecipes.length} shown)</h2>
+            <h2 className="text-lg font-semibold mb-3">
+              Recipes Library ({filteredRecipes.length} shown)
+            </h2>
             <div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
               {filteredRecipes.map((r) => (
                 <div key={r.id} className="border rounded-xl p-3">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold">{r.name}</div>
-                    <button
-                      className="text-xs px-2 py-0.5 rounded-full border"
-                      onClick={() => toggleFavorite(r.id)}
-                    >
+                    <button className="text-xs px-2 py-0.5 rounded-full border" onClick={() => toggleFavorite(r.id)}>
                       {favorites.includes(r.id) ? "★ Fav" : "☆ Fav"}
                     </button>
                   </div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">{r.mealType}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">
+                    {r.mealType} • {r.course}
+                  </div>
                   <div className="mt-1 flex gap-2 flex-wrap">
-                    {r.tags?.dutchOven && <Pill>Dutch oven</Pill>}
+                    {r.tags?.dutchOven && <Pill>DO</Pill>}
                     {r.tags?.backpacking && <Pill>Backpacking</Pill>}
                     {r.tags?.car && <Pill>Car</Pill>}
                     {r.tags?.canoe && <Pill>Canoe</Pill>}
@@ -1043,6 +931,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* Shopping List */}
           <div className="p-4 bg-white rounded-2xl shadow">
             <h2 className="text-lg font-semibold mb-3">Shopping List</h2>
             <div className="grid md:grid-cols-2 gap-3">
@@ -1058,6 +947,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* Duty Roster */}
           <div className="p-4 bg-white rounded-2xl shadow">
             <h2 className="text-lg font-semibold mb-3">Duty Roster</h2>
             <div className="overflow-x-auto">
@@ -1065,10 +955,9 @@ export default function App() {
                 <thead>
                   <tr>
                     <th className="border px-2 py-1 text-left">Meal</th>
+                    <th className="border px-2 py-1 text-left">Main</th>
                     {roles.map((r) => (
-                      <th key={r} className="border px-2 py-1 text-left">
-                        {r}
-                      </th>
+                      <th key={r} className="border px-2 py-1 text-left">{r}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1077,9 +966,8 @@ export default function App() {
                     const r = recipes.find((x) => x.id === d.recipeId);
                     return (
                       <tr key={d.id}>
-                        <td className="border px-2 py-1">
-                          {d.mealType} — <span className="text-slate-600">{r?.name}</span>
-                        </td>
+                        <td className="border px-2 py-1 cap">{d.mealType}</td>
+                        <td className="border px-2 py-1">{r?.name || "—"}</td>
                         {roles.map((role) => (
                           <td key={role} className="border px-2 py-1">
                             {d.assignment[role]}
@@ -1097,41 +985,38 @@ export default function App() {
 
       {/* Print content */}
       <div className="hidden" ref={printRef}>
-        <h1>Troop Duty Roster + Meal Plan</h1>
+        <h1>Troop Meal Plan by Course</h1>
         <div className="muted">
-          Scouts: {scouts} · Camp: {CAMP_TYPES.find((c) => c.key === campType)?.label} · Diet:{" "}
-          {Object.keys(diet).filter((k) => diet[k]).join(", ") || "None"}
+          Scouts: {scouts} • Diet: {Object.keys(diet).filter((k) => diet[k]).join(", ") || "None"}
         </div>
 
         <h2>Menu</h2>
         <table>
           <thead>
             <tr>
-              <th>Meal</th>
-              <th>Recipe</th>
+              <th>Meal</th><th>Course</th><th>Recipe</th>
             </tr>
           </thead>
-          <tbody>
-            {menu.map((m) => {
-              const r = recipes.find((rr) => rr.id === m.recipeId);
-              return (
-                <tr key={m.id}>
-                  <td className="capitalize">{m.mealType}</td>
-                  <td>{r?.name}</td>
-                </tr>
-              );
-            })}
-          </tbody>
+        <tbody>
+          {menu.map((m) => {
+            const r = recipes.find((x) => x.id === m.recipeId);
+            return (
+              <tr key={m.id}>
+                <td className="cap">{m.mealType}</td>
+                <td className="cap">{m.course}</td>
+                <td>{r?.name || "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
         </table>
 
         <h2>Duty Roster</h2>
         <table>
           <thead>
             <tr>
-              <th>Meal</th>
-              {roles.map((r) => (
-                <th key={r}>{r}</th>
-              ))}
+              <th>Meal</th><th>Main</th>
+              {roles.map((r) => (<th key={r}>{r}</th>))}
             </tr>
           </thead>
           <tbody>
@@ -1139,12 +1024,9 @@ export default function App() {
               const r = recipes.find((x) => x.id === d.recipeId);
               return (
                 <tr key={d.id}>
-                  <td className="capitalize">
-                    {d.mealType} — {r?.name}
-                  </td>
-                  {roles.map((role) => (
-                    <td key={role}>{d.assignment[role]}</td>
-                  ))}
+                  <td className="cap">{d.mealType}</td>
+                  <td>{r?.name || "—"}</td>
+                  {roles.map((role) => (<td key={role}>{d.assignment[role]}</td>))}
                 </tr>
               );
             })}
@@ -1153,47 +1035,17 @@ export default function App() {
 
         <h2>Shopping List</h2>
         <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Unit</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Item</th><th>Qty</th><th>Unit</th></tr></thead>
           <tbody>
             {shopping.map((it, i) => (
-              <tr key={i}>
-                <td>{it.item}</td>
-                <td>{Number(it.qty.toFixed(2))}</td>
-                <td>{it.unit}</td>
-              </tr>
+              <tr key={i}><td>{it.item}</td><td>{Number(it.qty.toFixed(2))}</td><td>{it.unit}</td></tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Tiny build/debug footer */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: 8,
-          right: 8,
-          fontSize: 12,
-          opacity: 0.7,
-          background: "rgba(255,255,255,.8)",
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: "4px 8px",
-        }}
-      >
-        build: {import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "local"} •
-        {Object.entries(envStatus)
-          .map(([k, v]) => ` ${k}=${v ? "✓" : "—"}`)
-          .join("")}
-      </div>
-
       <footer className="max-w-6xl mx-auto px-4 pb-10 text-center text-xs text-slate-500">
-        Built for Grubmasters • Local fallback; cloud sync when Troop ID is set • Print to PDF via Export button
+        Local fallback; cloud sync when Troop ID is set • Print via Export button
       </footer>
     </div>
   );
