@@ -8,9 +8,7 @@ import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
   onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithRedirect,
-  signOut,
+  signInAnonymously,
 } from "firebase/auth";
 import {
   getFirestore,
