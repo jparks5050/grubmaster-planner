@@ -34,6 +34,37 @@ const cfg = {
 const firebaseApp = getApps().length ? getApps()[0] : initializeApp(cfg);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+useEffect(() => {
+  try {
+    // Initialize Firebase app once (keep your existing initializeApp(cfg) logic)
+    if (getApps().length === 0) {
+      initializeApp(cfg);
+    }
+
+    const auth = getAuth();
+
+    // Listen for auth state
+    const un = onAuthStateChanged(auth, (u) => {
+      setUserEmail(u?.email || "");  // optional, you can also store u.uid for display
+      setPhase(u ? "signed-in" : "signed-out");
+    });
+
+    // If nobody is signed in yet, sign in anonymously (no UI shown)
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((e) => {
+        console.error("Anonymous sign-in failed", e);
+        setErr(e);
+        setPhase("error");
+      });
+    }
+
+    return un;
+  } catch (e) {
+    console.error("[App] init error", e);
+    setErr(e);
+    setPhase("error");
+  }
+}, []);
 
 // --- Small utils ---
 const uid = () => Math.random().toString(36).slice(2, 10);
