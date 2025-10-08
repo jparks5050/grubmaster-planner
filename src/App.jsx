@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.jsx — Day-grouped Menu (Breakfast, Lunch, Dinner per day)
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // --- Firebase (anonymous) ---
@@ -44,25 +44,24 @@ const loadLS = (k, d) => {
   }
 };
 
-// Normalize to keep UI safe (no defaulting diet/tags to include dutchOven)
+// Normalize (no default DO/diet)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
-  clean.tags = { ...(r?.tags || {}) }; // leave absent keys absent
+  clean.tags = { ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
   clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
   clean.steps = Array.isArray(r?.steps) ? r.steps : [];
-  clean.mealType = r?.mealType || "dinner";
-  clean.course = r?.course || "main"; // main | side | drink | dessert
+  clean.mealType = r?.mealType || "dinner"; // breakfast|lunch|dinner
+  clean.course = r?.course || "main"; // main|side|drink|dessert
   clean.name = r?.name || "Unnamed";
   clean.serves = r?.serves || 8;
   clean.id = r?.id || uid();
   return clean;
 };
 
-// ---------- Seed data (simple, course-aware) ----------
+// ---------- Seed data (course-aware) ----------
 const SEED = [
   normalizeRecipe({
-    id: uid(),
     name: "Dutch Oven Chicken & Veg Pot Pie",
     mealType: "dinner",
     course: "main",
@@ -77,7 +76,6 @@ const SEED = [
     steps: ["Brown chicken", "Add veg + gravy", "Top with biscuits, bake 20–25m"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Campfire Corn",
     mealType: "dinner",
     course: "side",
@@ -86,7 +84,6 @@ const SEED = [
     steps: ["Wrap in foil w/ butter + salt", "Roast over coals ~12–15m"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Lemonade",
     mealType: "dinner",
     course: "drink",
@@ -95,7 +92,6 @@ const SEED = [
     steps: ["Mix with water per instructions"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Dutch Oven Cobbler",
     mealType: "dinner",
     course: "dessert",
@@ -108,7 +104,6 @@ const SEED = [
     steps: ["Layer filling, dry mix, butter pats", "Bake in DO until bubbling"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Oatmeal Packs",
     mealType: "breakfast",
     course: "main",
@@ -120,7 +115,6 @@ const SEED = [
     steps: ["Boil water", "Mix & serve"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Banana",
     mealType: "breakfast",
     course: "side",
@@ -129,7 +123,6 @@ const SEED = [
     steps: ["Serve with oatmeal"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Hot Cocoa",
     mealType: "breakfast",
     course: "drink",
@@ -138,7 +131,6 @@ const SEED = [
     steps: ["Add to hot water & stir"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "PB&J + Fruit",
     mealType: "lunch",
     course: "main",
@@ -151,7 +143,6 @@ const SEED = [
     steps: ["Assemble sandwiches"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Chips",
     mealType: "lunch",
     course: "side",
@@ -160,7 +151,6 @@ const SEED = [
     steps: ["Serve with sandwiches"],
   }),
   normalizeRecipe({
-    id: uid(),
     name: "Water",
     mealType: "lunch",
     course: "drink",
@@ -189,8 +179,8 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         mealType: "dinner",
         course: "main",
         serves: 8,
-        tags: {}, // no dutch oven default
-        diet: {}, // no restrictions default
+        tags: {},
+        diet: {},
         ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
         steps: [""],
       })
@@ -384,7 +374,7 @@ const buildRecipesExport = (recipes, meta = {}) => ({
   $schema: "https://example.com/schemas/grubmaster/recipes-v1.json",
   exporter: {
     app: "Scouts BSA Grubmaster Planner",
-    version: "2.0.0",
+    version: "2.1.0",
     exportedAt: new Date().toISOString(),
     ...meta,
   },
@@ -453,11 +443,8 @@ export default function App() {
   const [scouts, setScouts] = useState(8);
   const [meals, setMeals] = useState({ breakfast: 2, lunch: 2, dinner: 2 });
   const [campType, setCampType] = useState("car");
-
-  // Dutch oven filter (radio; default = No)
   const [includeDutchOven, setIncludeDutchOven] = useState(false);
 
-  // Diets (no defaults selected)
   const DIETS = [
     { key: "alphaGalSafe", label: "Alpha-gal safe (no mammal products)" },
     { key: "vegetarian", label: "Vegetarian" },
@@ -532,57 +519,73 @@ export default function App() {
       if (campType === "backpacking" && !t.backpacking) return false;
       if (campType === "car" && !(t.car || t.backpacking || t.canoe)) return false;
       if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
-
-      // Dutch oven filter (exclude DO recipes unless allowed)
       if (!includeDutchOven && t.dutchOven) return false;
-
-      // diet
       for (const k of Object.keys(diet)) if (diet[k] && !r.diet?.[k]) return false;
       return true;
     });
   }, [recipes, campType, includeDutchOven, diet]);
 
   // ------------- Menu (auto + editable) -------------
-  // Our menu has slots: main, side, drink for all meals; dinner adds dessert
-  // Menu item: { id, mealType, course: 'main'|'side'|'drink'|'dessert', recipeId }
-  const COURSE_ORDER = ["main", "side", "drink"];
+  // Represent menu as slots with a dayIndex (0-based), mealType, course, recipeId
+  const COURSES_BASE = ["main", "side", "drink"];
   const [menu, setMenu] = useState([]);
 
-  // Build needed slots
+  // Determine number of days (max of meal counts)
+  const dayCount = useMemo(
+    () => Math.max(meals.breakfast || 0, meals.lunch || 0, meals.dinner || 0),
+    [meals]
+  );
+
+  // Build needed slots by days
   const neededSlots = useMemo(() => {
     const list = [];
-    const addSlots = (mt, count) => {
-      for (let i = 0; i < count; i++) {
-        COURSE_ORDER.forEach((c) => list.push({ mealType: mt, course: c }));
-        if (mt === "dinner") list.push({ mealType: mt, course: "dessert" });
+    for (let d = 0; d < dayCount; d++) {
+      // Breakfast
+      if ((meals.breakfast || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "breakfast", course: c }));
       }
-    };
-    addSlots("breakfast", meals.breakfast || 0);
-    addSlots("lunch", meals.lunch || 0);
-    addSlots("dinner", meals.dinner || 0);
+      // Lunch
+      if ((meals.lunch || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "lunch", course: c }));
+      }
+      // Dinner (+ dessert)
+      if ((meals.dinner || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "dinner", course: c }));
+        list.push({ dayIndex: d, mealType: "dinner", course: "dessert" });
+      }
+    }
     return list;
-  }, [meals]);
+  }, [dayCount, meals.breakfast, meals.lunch, meals.dinner]);
 
-  // Auto-generate when filteredRecipes/meals change, but preserve user edits if present
+  // Auto-generate while preserving edits, now per-day
   useEffect(() => {
     const next = neededSlots.map((slot, idx) => {
       const existing = menu[idx];
-      if (existing && existing.mealType === slot.mealType && existing.course === slot.course) {
-        return existing; // keep user edit
+      if (
+        existing &&
+        existing.dayIndex === slot.dayIndex &&
+        existing.mealType === slot.mealType &&
+        existing.course === slot.course
+      ) {
+        return existing;
       }
-      // pick by mealType+course; prefer favorites
       const favs = new Set(favorites);
       const pool = filteredRecipes
         .filter((r) => r.mealType === slot.mealType && r.course === slot.course)
         .sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
       const pick = pool[0];
-      return { id: uid(), mealType: slot.mealType, course: slot.course, recipeId: pick?.id || "" };
+      return {
+        id: uid(),
+        dayIndex: slot.dayIndex,
+        mealType: slot.mealType,
+        course: slot.course,
+        recipeId: pick?.id || "",
+      };
     });
     setMenu(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredRecipes, neededSlots.length, favorites.length]);
 
-  // Menu editor: update a specific slot
   const setMenuRecipe = (slotIndex, recipeId) => {
     setMenu((m) => {
       const a = [...m];
@@ -592,6 +595,22 @@ export default function App() {
     });
   };
 
+  // Group menu by day for rendering/printing
+  const menuByDay = useMemo(() => {
+    const grouped = Array.from({ length: dayCount }, () => ({ breakfast: [], lunch: [], dinner: [] }));
+    menu.forEach((s) => {
+      if (grouped[s.dayIndex]) grouped[s.dayIndex][s.mealType].push(s);
+    });
+    // within each meal, sort by course order
+    const order = { main: 0, side: 1, drink: 2, dessert: 3 };
+    for (let d = 0; d < grouped.length; d++) {
+      ["breakfast", "lunch", "dinner"].forEach((mt) => {
+        grouped[d][mt].sort((a, b) => (order[a.course] ?? 9) - (order[b.course] ?? 9));
+      });
+    }
+    return grouped;
+  }, [menu, dayCount]);
+
   // ------------ Shopping list from menu ------------
   function addQty(map, key, qty = 0, unit = "") {
     const k = `${key}@@${unit}`.toLowerCase();
@@ -599,13 +618,10 @@ export default function App() {
   }
   const shopping = useMemo(() => {
     const map = new Map();
-    const chosen = menu
-      .map((m) => recipes.find((r) => r.id === m.recipeId))
-      .filter(Boolean);
+    const chosen = menu.map((m) => recipes.find((r) => r.id === m.recipeId)).filter(Boolean);
     chosen.forEach((r) => {
       r.ingredients.forEach((ing) => addQty(map, ing.item, (ing.qtyPerPerson || 0) * scouts, ing.unit || ""));
     });
-    // add a couple staples
     addQty(map, "paper towels", Math.ceil(scouts / 4), "roll");
     addQty(map, "trash bags", 2, "ea");
     return Array.from(map.values()).sort((a, b) => a.item.localeCompare(b.item));
@@ -618,9 +634,7 @@ export default function App() {
 
   const saveEdited = async (rec) => {
     const clean = normalizeRecipe(rec);
-    // local
     setRecipes((prev) => prev.map((r) => (r.id === clean.id ? clean : r)));
-    // cloud (merge)
     if (authed && troopId && paths.recipesCol) {
       await setDoc(doc(paths.recipesCol, clean.id), { ...clean, updatedAt: serverTimestamp() }, { merge: true });
       setSyncInfo({ status: "online", last: new Date().toISOString() });
@@ -675,6 +689,7 @@ export default function App() {
         body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
         h1{margin:0 0 8px}
         h2{margin:24px 0 8px}
+        h3{margin:12px 0 6px}
         table{border-collapse:collapse;width:100%}
         th,td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:12px}
         .muted{color:#555}
@@ -709,23 +724,16 @@ export default function App() {
       const arr = Array.isArray(data?.recipes) ? data.recipes : Array.isArray(data) ? data : null;
       if (!arr) throw new Error("Invalid file: expected { recipes: [...] } or an array.");
       const incoming = arr.map(normalizeRecipe);
-
-      // Local upsert
       setRecipes((prev) => {
         const map = new Map(prev.map((r) => [r.id, r]));
         incoming.forEach((r) => map.set(r.id, r));
         return Array.from(map.values());
       });
-
-      // Best-effort cloud upsert
       if (authed && troopId && paths.recipesCol) {
         await Promise.all(
-          incoming.map((r) =>
-            setDoc(doc(paths.recipesCol, r.id), { ...r, updatedAt: serverTimestamp() }, { merge: true })
-          )
+          incoming.map((r) => setDoc(doc(paths.recipesCol, r.id), { ...r, updatedAt: serverTimestamp() }, { merge: true }))
         );
       }
-
       setImportMsg(`Imported ${incoming.length} recipe(s).`);
     } catch (e) {
       setImportMsg(`Import failed: ${e?.message || e}`);
@@ -865,7 +873,6 @@ export default function App() {
 
             <div className="mt-3">
               <div className="text-sm font-medium mb-1">Dutch oven</div>
-              {/* Radio group (default No) */}
               <label className="inline-flex items-center gap-2 mr-4">
                 <input
                   type="radio"
@@ -885,9 +892,7 @@ export default function App() {
                 Yes (include Dutch oven recipes)
               </label>
               {campType === "backpacking" && includeDutchOven && (
-                <div className="text-xs text-amber-700 mt-1">
-                  Note: Dutch oven may be impractical for backpacking trips.
-                </div>
+                <div className="text-xs text-amber-700 mt-1">Note: Dutch oven may be impractical for backpacking trips.</div>
               )}
             </div>
 
@@ -936,84 +941,81 @@ export default function App() {
                 )
               }
             />
-            <p className="text-xs text-slate-500 mt-1">
-              One name per line. Saved troop-wide when Troop ID is set.
-            </p>
+            <p className="text-xs text-slate-500 mt-1">One name per line. Saved troop-wide when Troop ID is set.</p>
           </div>
         </section>
 
-        {/* RIGHT: Menu Editor + Library + Shopping + Duty */}
+        {/* RIGHT: Day-grouped Menu + Library + Shopping + Duty */}
         <section className="md:col-span-2 space-y-6">
-          {/* Menu (editable) */}
+          {/* Menu (by day) */}
           <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Menu (click any slot to change)</h2>
-
-            {menu.length === 0 && (
-              <div className="text-slate-500">No meals selected. Increase counts on the left.</div>
+            <h2 className="text-lg font-semibold mb-3">Menu (grouped by day)</h2>
+            {dayCount === 0 && (
+              <div className="text-slate-500">Set meal counts on the left to create days.</div>
             )}
 
-            <div className="space-y-4">
-              {menu.map((slot, idx) => {
-                const options = filteredRecipes.filter(
-                  (r) => r.mealType === slot.mealType && r.course === slot.course
-                );
-                const chosen = recipes.find((r) => r.id === slot.recipeId);
+            <div className="space-y-6">
+              {menuByDay.map((day, dIdx) => (
+                <div key={dIdx} className="border rounded-xl p-3">
+                  <div className="text-sm font-semibold mb-2">Day {dIdx + 1}</div>
 
-                return (
-                  <div
-                    key={slot.id}
-                    className="border rounded-xl p-3 flex flex-col md:flex-row md:items-center md:gap-3"
-                  >
-                    <div className="text-sm uppercase tracking-wide text-slate-500 w-40">
-                      {slot.mealType} — {slot.course}
-                    </div>
-                    <div className="grow">
-                      <select
-                        className="w-full border rounded-lg px-3 py-2"
-                        value={slot.recipeId}
-                        onChange={(e) => setMenuRecipe(idx, e.target.value)}
-                      >
-                        <option value="">— Pick a recipe —</option>
-                        {options.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                            {r.tags?.dutchOven ? " (Dutch oven)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {chosen && (
-                        <div className="mt-1 text-xs text-slate-600">
-                          Serves {chosen.serves}. Ingredients scale to {scouts} scouts below.
+                  {["breakfast", "lunch", "dinner"].map((mt) => (
+                    day[mt].length > 0 && (
+                      <div key={mt} className="mb-3">
+                        <div className="uppercase tracking-wide text-slate-500 text-xs mb-1">{mt}</div>
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {day[mt].map((slot) => {
+                            const options = filteredRecipes.filter(
+                              (r) => r.mealType === slot.mealType && r.course === slot.course
+                            );
+                            const slotIndex = menu.findIndex((s) => s.id === slot.id);
+                            const chosen = recipes.find((r) => r.id === slot.recipeId);
+                            return (
+                              <div key={slot.id} className="border rounded-lg p-2">
+                                <div className="text-xs text-slate-600 mb-1 capitalize">{slot.course}</div>
+                                <select
+                                  className="w-full border rounded-lg px-3 py-2"
+                                  value={slot.recipeId}
+                                  onChange={(e) => setMenuRecipe(slotIndex, e.target.value)}
+                                >
+                                  <option value="">— Pick a recipe —</option>
+                                  {options.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                      {r.name}
+                                      {r.tags?.dutchOven ? " (DO)" : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                                {chosen && (
+                                  <div className="mt-1 text-xs text-slate-600">
+                                    Serves {chosen.serves}. Scales to {scouts} scouts.
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                      </div>
+                    )
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Library (with edit/delete/fav) */}
           <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">
-              Recipes Library ({filteredRecipes.length} shown)
-            </h2>
+            <h2 className="text-lg font-semibold mb-3">Recipes Library ({filteredRecipes.length} shown)</h2>
             <div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
               {filteredRecipes.map((r) => (
                 <div key={r.id} className="border rounded-xl p-3">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold">{r.name}</div>
                     <div className="flex items-center gap-2">
-                      <button
-                        className="text-xs px-2 py-0.5 rounded-full border"
-                        onClick={() => toggleFavorite(r.id)}
-                      >
+                      <button className="text-xs px-2 py-0.5 rounded-full border" onClick={() => toggleFavorite(r.id)}>
                         {favorites.includes(r.id) ? "★ Fav" : "☆ Fav"}
                       </button>
-                      <button
-                        className="text-xs px-2 py-0.5 rounded-full border"
-                        onClick={() => startEdit(r.id)}
-                      >
+                      <button className="text-xs px-2 py-0.5 rounded-full border" onClick={() => startEdit(r.id)}>
                         Edit
                       </button>
                       <button
@@ -1067,9 +1069,7 @@ export default function App() {
                 <div key={i} className="flex items-center gap-2">
                   <input type="checkbox" className="w-4 h-4" />
                   <span>{it.item}</span>
-                  <span className="ml-auto text-sm text-slate-600">
-                    {Number(it.qty.toFixed(2))} {it.unit}
-                  </span>
+                  <span className="ml-auto text-sm text-slate-600">{Number(it.qty.toFixed(2))} {it.unit}</span>
                 </div>
               ))}
             </div>
@@ -1078,7 +1078,7 @@ export default function App() {
           {/* Duty Roster (rotate names per main course occurrence) */}
           <div className="p-4 bg-white rounded-2xl shadow">
             <h2 className="text-lg font-semibold mb-3">Duty Roster</h2>
-            <RosterTable names={names} menu={menu} recipes={recipes} />
+            <RosterTable names={names} menu={menu} recipes={recipes} dayCount={dayCount} />
           </div>
         </section>
       </main>
@@ -1087,36 +1087,41 @@ export default function App() {
       <div className="hidden" ref={printRef}>
         <h1>Troop Duty Roster + Meal Plan</h1>
         <div className="muted">
-          Scouts: {scouts} · Camp: {campTypes.find((c) => c.key === campType)?.label} · Dutch oven:{" "}
-          {includeDutchOven ? "Yes" : "No"} · Diet:{" "}
-          {Object.keys(diet).filter((k) => diet[k]).join(", ") || "None"}
+          Scouts: {scouts} · Camp: {campTypes.find((c) => c.key === campType)?.label} · Dutch oven: {includeDutchOven ? "Yes" : "No"} · Diet: {Object.keys(diet).filter((k) => diet[k]).join(", ") || "None"}
         </div>
 
-        <h2>Menu</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Meal</th>
-              <th>Course</th>
-              <th>Recipe</th>
-            </tr>
-          </thead>
-          <tbody>
-            {menu.map((m) => {
-              const r = recipes.find((rr) => rr.id === m.recipeId);
-              return (
-                <tr key={m.id}>
-                  <td className="cap">{m.mealType}</td>
-                  <td className="cap">{m.course}</td>
-                  <td>{r?.name || ""}</td>
+        {menuByDay.map((day, dIdx) => (
+          <div key={dIdx}>
+            <h2>Day {dIdx + 1} Menu</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Meal</th>
+                  <th>Course</th>
+                  <th>Recipe</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {["breakfast", "lunch", "dinner"].map((mt) =>
+                  day[mt].map((m) => {
+                    const r = recipes.find((rr) => rr.id === m.recipeId);
+                    return (
+                      <tr key={m.id}>
+                        <td className="cap">{m.mealType}</td>
+                        <td className="cap">{m.course}</td>
+                        <td>{r?.name || ""}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        ))}
 
         <h2>Duty Roster</h2>
-        <RosterTable names={names} menu={menu} recipes={recipes} printMode />
+        <RosterTable names={names} menu={menu} recipes={recipes} printMode dayCount={dayCount} />
+
         <h2>Shopping List</h2>
         <table>
           <thead>
@@ -1148,15 +1153,37 @@ export default function App() {
 // ---------------------------
 // Duty roster helper component
 // ---------------------------
-function RosterTable({ names, menu, recipes, printMode = false }) {
+function RosterTable({ names, menu, recipes, printMode = false, dayCount = 0 }) {
   const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
-  const mealsFlat = menu
-    .filter((m) => m.course === "main")
-    .map((m, idx) => ({ ...m, idx }));
-  const duty = mealsFlat.map((m, i) => {
+
+  // Build a sequence of main-course slots in day order
+  const mains = useMemo(() => {
+    const order = [];
+    // group by days for stable assignment
+    const byDay = {};
+    menu.forEach((s) => {
+      if (s.course !== "main") return;
+      if (!byDay[s.dayIndex]) byDay[s.dayIndex] = [];
+      byDay[s.dayIndex].push(s);
+    });
+    Object.keys(byDay)
+      .map((k) => Number(k))
+      .sort((a, b) => a - b)
+      .forEach((d) => {
+        // breakfast, lunch, dinner within the day
+        ["breakfast", "lunch", "dinner"].forEach((mt) => {
+          byDay[d]
+            .filter((x) => x.mealType === mt)
+            .forEach((x) => order.push(x));
+        });
+      });
+    return order;
+  }, [menu]);
+
+  const duty = mains.map((m, i) => {
     const assignment = {};
     roles.forEach((role, rIdx) => {
-      const who = names[(i + rIdx) % names.length] || `Patrol ${rIdx + 1}`;
+      const who = names[(i + rIdx) % (names.length || 1)] || `Patrol ${rIdx + 1}`;
       assignment[role] = who;
     });
     return { ...m, assignment };
@@ -1164,65 +1191,81 @@ function RosterTable({ names, menu, recipes, printMode = false }) {
 
   if (printMode) {
     return (
-      <table>
-        <thead>
-          <tr>
-            <th>Meal</th>
-            <th>Main</th>
-            {roles.map((r) => (
-              <th key={r}>{r}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {duty.map((d) => {
-            const r = recipes.find((x) => x.id === d.recipeId);
-            return (
-              <tr key={d.id}>
-                <td className="cap">{d.mealType}</td>
-                <td>{r?.name || "—"}</td>
-                {roles.map((role) => (
-                  <td key={role}>{d.assignment[role]}</td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div>
+        {[...new Set(duty.map((d) => d.dayIndex))]
+          .sort((a, b) => a - b)
+          .map((d) => (
+            <div key={d}>
+              <h3>Day {d + 1}</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Meal</th>
+                    <th>Main</th>
+                    {roles.map((r) => (
+                      <th key={r}>{r}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {duty
+                    .filter((x) => x.dayIndex === d)
+                    .map((x) => {
+                      const r = recipes.find((rr) => rr.id === x.recipeId);
+                      return (
+                        <tr key={x.id}>
+                          <td className="cap">{x.mealType}</td>
+                          <td>{r?.name || "—"}</td>
+                          {roles.map((role) => (
+                            <td key={role}>{x.assignment[role]}</td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          ))}
+      </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr>
-            <th className="border px-2 py-1 text-left">Meal</th>
-            <th className="border px-2 py-1 text-left">Main</th>
-            {roles.map((r) => (
-              <th key={r} className="border px-2 py-1 text-left">
-                {r}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {duty.map((d) => {
-            const r = recipes.find((x) => x.id === d.recipeId);
-            return (
-              <tr key={d.id}>
-                <td className="border px-2 py-1 cap">{d.mealType}</td>
-                <td className="border px-2 py-1">{r?.name || "—"}</td>
-                {roles.map((role) => (
-                  <td key={role} className="border px-2 py-1">
-                    {d.assignment[role]}
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {Array.from({ length: dayCount }, (_, d) => d).map((d) => (
+        <div key={d} className="border rounded-xl">
+          <div className="px-2 py-1 text-sm font-semibold">Day {d + 1}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="border px-2 py-1 text-left">Meal</th>
+                  <th className="border px-2 py-1 text-left">Main</th>
+                  {roles.map((r) => (
+                    <th key={r} className="border px-2 py-1 text-left">{r}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {duty
+                  .filter((x) => x.dayIndex === d)
+                  .map((x) => {
+                    const r = recipes.find((rr) => rr.id === x.recipeId);
+                    return (
+                      <tr key={x.id}>
+                        <td className="border px-2 py-1 cap">{x.mealType}</td>
+                        <td className="border px-2 py-1">{r?.name || "—"}</td>
+                        {roles.map((role) => (
+                          <td key={role} className="border px-2 py-1">{x.assignment[role]}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
