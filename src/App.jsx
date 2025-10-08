@@ -1201,3 +1201,7 @@ useEffect(() => {
   );
                                 }                                 
 
+// At the bottom of your returned JSX, add:
+<div style={{position:'fixed',bottom:8,right:8,fontSize:12,opacity:.7}}>
+  build: {import.meta.env.VITE_VERCEL_GIT_COMMIT_SHA?.slice(0,7) || 'local'}
+</div>
