@@ -99,15 +99,6 @@ const normalizeRecipe = (r) => {
   return clean;
 };
 
-
-  clean.mealType = mt;
-  clean.course = course;
-  clean.name = r?.name || "Unnamed";
-  clean.serves = Number(r?.serves) || 8;
-
-  return clean;
-};
-
   // Guard mealType
   if (mt !== "breakfast" && mt !== "lunch" && mt !== "dinner") mt = "dinner";
 
