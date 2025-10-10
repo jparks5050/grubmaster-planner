@@ -38,13 +38,12 @@ const saveLS = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
   } catch (e) {
-    // fallback keeps the app running even if LS is blocked; won’t survive full refresh
     try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {}
     console.warn("LocalStorage save failed; fell back to sessionStorage for", k, e);
   }
 };
 const loadLS = (k, d) => {
-  // try localStorage first, then sessionStorage, else default
+  // Try localStorage, then sessionStorage; return default if both fail or empty
   for (const store of [(() => localStorage)(), (() => sessionStorage)()]) {
     try {
       const raw = store.getItem(k);
@@ -60,16 +59,38 @@ const loadLS = (k, d) => {
 // Normalize (no default DO/diet)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
-  // stable id even for imported rows
   clean.id = r?.id || uid();
-  const defaultTags = { dutchOven: false, backpacking: false, car: false, canoe: false };
-  clean.tags = { ...defaultTags, ...(r?.tags || {}) };
+  clean.tags = { ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
   clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
   clean.steps = Array.isArray(r?.steps) ? r.steps : [];
-  // case/variant tolerant meal type
-  const mt = String(r?.mealType || "dinner").trim().toLowerCase();
-  clean.mealType = (mt === "breakfast" || mt === "lunch" || mt === "dinner") ? mt : "dinner";
+
+  // Normalize mealType + course (your JSON lacks course in most rows and has one with mealType="dessert")
+  const name = String(r?.name || "").toLowerCase();
+  let mt = String(r?.mealType || "dinner").trim().toLowerCase();
+  let course = String(r?.course || "").trim().toLowerCase();
+
+  // If mealType is "dessert", convert to dinner+dessert (that matches how the UI creates slots)
+  if (mt === "dessert") {
+    mt = "dinner";
+    course = "dessert";
+  }
+  // Guard mealType
+  if (mt !== "breakfast" && mt !== "lunch" && mt !== "dinner") mt = "dinner";
+
+  // Auto-detect course when missing/invalid (so menu can fill side/drink/dessert slots)
+  const detectCourse = () => {
+    if (/cobbler|brownie|cookie|cake|pie|crisp|dump\\s*cake|monkey\\s*bread/.test(name)) return "dessert";
+    if (/lemonade|water|cocoa|hot\\s*cocoa|juice|milk|coffee|tea|drink/.test(name)) return "drink";
+    if (/chips|fruit|parfait|granola|yogurt|banana|salad|corn|veggies?|side/.test(name)) return "side";
+    return "main";
+  };
+  if (!["main","side","drink","dessert"].includes(course)) {
+    course = detectCourse();
+  }
+
+  clean.mealType = mt;
+  clean.course = course;
   clean.name = r?.name || "Unnamed";
   clean.serves = Number(r?.serves) || 8;
   return clean;
@@ -586,11 +607,18 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       ) {
         return existing;
       }
-      const favs = new Set(favorites);
-      const pool = filteredRecipes
-        .filter((r) => r.mealType === slot.mealType && r.course === slot.course)
-        .sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
-      const pick = pool[0];
+const favs = new Set(favorites);
+let pool = filteredRecipes.filter(
+  (r) => r.mealType === slot.mealType && r.course === slot.course
+);
+// Fallback: if no exact course match, allow MAIN as a substitute (except for dessert)
+if (pool.length === 0 && slot.course !== "dessert") {
+  pool = filteredRecipes.filter(
+    (r) => r.mealType === slot.mealType && ((r.course || "main") === "main")
+  );
+}
+pool = pool.sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
+const pick = pool[0];
       return {
         id: uid(),
         dayIndex: slot.dayIndex,
