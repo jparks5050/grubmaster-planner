@@ -4,6 +4,10 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+   define: {
+   // Prevent "process is not defined" in the browser for any deps that check process.env
+   "process.env": {}
+ },
   build: {
     lib: {
       entry: "web-component.jsx",     // <— the wrapper we just created
