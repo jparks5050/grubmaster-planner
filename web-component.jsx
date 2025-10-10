@@ -1,4 +1,5 @@
 // web-component.jsx
+import cssHref from './index.css?url';
 import * as React from "react";
 import * as ReactDOM from "react-dom/client";
 import App from "./src/App.jsx";
