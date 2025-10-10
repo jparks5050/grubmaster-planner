@@ -21,6 +21,10 @@ import App from "./src/App.jsx";
     constructor() {
       super();
       this._shadow = this.attachShadow({ mode: "open" });
+            const link = document.createElement('link');
+link.rel = 'stylesheet';
+link.href = cssHref;          // <- points to the emitted CSS asset
+this._shadow.appendChild(link);
       // Give it some space even if no CSS is present
       const mount = document.createElement("div");
       mount.style.minHeight = "200px";
@@ -28,10 +32,7 @@ import App from "./src/App.jsx";
       this._mount = mount;
       this._root = null;
       console.info("[grubmaster-app] constructed");
-      const link = document.createElement('link');
-link.rel = 'stylesheet';
-link.href = cssHref;          // <- points to the emitted CSS asset
-this._shadow.appendChild(link);
+
     }
 
     static get observedAttributes() { return ["troop", "data-troop", "embed", "debug"]; }
