@@ -34,28 +34,44 @@ function getFirebase() {
 // Utilities & Local Storage
 // ---------------------------
 const uid = () => Math.random().toString(36).slice(2, 10);
-const saveLS = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-const loadLS = (k, d) => {
+const saveLS = (k, v) => {
   try {
-    const v = JSON.parse(localStorage.getItem(k));
-    return v ?? d;
-  } catch {
-    return d;
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch (e) {
+    // fallback keeps the app running even if LS is blocked; won’t survive full refresh
+    try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {}
+    console.warn("LocalStorage save failed; fell back to sessionStorage for", k, e);
   }
+};
+const loadLS = (k, d) => {
+  // try localStorage first, then sessionStorage, else default
+  for (const store of [(() => localStorage)(), (() => sessionStorage)()]) {
+    try {
+      const raw = store.getItem(k);
+      if (raw != null) {
+        const v = JSON.parse(raw);
+        if (v != null) return v;
+      }
+    } catch {}
+  }
+  return d;
 };
 
 // Normalize (no default DO/diet)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
-  clean.tags = { ...(r?.tags || {}) };
+  // stable id even for imported rows
+  clean.id = r?.id || uid();
+  const defaultTags = { dutchOven: false, backpacking: false, car: false, canoe: false };
+  clean.tags = { ...defaultTags, ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
   clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
   clean.steps = Array.isArray(r?.steps) ? r.steps : [];
-  clean.mealType = r?.mealType || "dinner"; // breakfast|lunch|dinner
-  clean.course = r?.course || "main"; // main|side|drink|dessert
+  // case/variant tolerant meal type
+  const mt = String(r?.mealType || "dinner").trim().toLowerCase();
+  clean.mealType = (mt === "breakfast" || mt === "lunch" || mt === "dinner") ? mt : "dinner";
   clean.name = r?.name || "Unnamed";
-  clean.serves = r?.serves || 8;
-  clean.id = r?.id || uid();
+  clean.serves = Number(r?.serves) || 8;
   return clean;
 };
 
@@ -516,9 +532,10 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   const filteredRecipes = useMemo(() => {
     return recipes.filter((r) => {
       const t = r.tags || {};
-      if (campType === "backpacking" && !t.backpacking) return false;
-      if (campType === "car" && !(t.car || t.backpacking || t.canoe)) return false;
-      if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
+      const noTagTrue = !t.backpacking && !t.car && !t.canoe && !t.dutchOven; // allow untagged for car
+    if (campType === "backpacking" && !t.backpacking) return false;
+    if (campType === "car" && !(t.car || t.backpacking || t.canoe || noTagTrue)) return false;
+    if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
       if (!includeDutchOven && t.dutchOven) return false;
       for (const k of Object.keys(diet)) if (diet[k] && !r.diet?.[k]) return false;
       return true;
