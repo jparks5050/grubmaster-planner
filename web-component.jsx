@@ -1,5 +1,7 @@
-// web-component.jsx
-import cssHref from './index.css?url';
+// 1) Import the compiled CSS as a string (so we can put it into Shadow DOM)
+import cssText from "./src/index.css?inline"; // <-- NOTE the path: ./src/index.css
+
+// (rest of your imports)
 import * as React from "react";
 import * as ReactDOM from "react-dom/client";
 import App from "./src/App.jsx";
