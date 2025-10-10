@@ -34,6 +34,7 @@ function getFirebase() {
 // Utilities & Local Storage
 // ---------------------------
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Robust storage that also works in iframes
 const saveLS = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
@@ -43,8 +44,7 @@ const saveLS = (k, v) => {
   }
 };
 const loadLS = (k, d) => {
-  // Try localStorage, then sessionStorage; return default if both fail or empty
-  for (const store of [(() => localStorage)(), (() => sessionStorage)()]) {
+  for (const store of [localStorage, sessionStorage]) {
     try {
       const raw = store.getItem(k);
       if (raw != null) {
@@ -56,7 +56,7 @@ const loadLS = (k, d) => {
   return d;
 };
 
-// Normalize (no default DO/diet)
+// Normalize (id, mealType, course, arrays)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
   clean.id = r?.id || uid();
@@ -65,16 +65,29 @@ const normalizeRecipe = (r) => {
   clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
   clean.steps = Array.isArray(r?.steps) ? r.steps : [];
 
-  // Normalize mealType + course (your JSON lacks course in most rows and has one with mealType="dessert")
   const name = String(r?.name || "").toLowerCase();
   let mt = String(r?.mealType || "dinner").trim().toLowerCase();
   let course = String(r?.course || "").trim().toLowerCase();
 
-  // If mealType is "dessert", convert to dinner+dessert (that matches how the UI creates slots)
-  if (mt === "dessert") {
-    mt = "dinner";
-    course = "dessert";
-  }
+  // mealType:"dessert" → dinner+dessert (matches how the UI makes dinner slots)
+  if (mt === "dessert") { mt = "dinner"; course = "dessert"; }
+  if (!["breakfast", "lunch", "dinner"].includes(mt)) mt = "dinner";
+
+  // infer course if missing/invalid
+  const has = (...k) => k.some(kw => name.includes(kw));
+  const detectCourse = () =>
+    has("cobbler","brownie","cookie","cake","pie","crisp","dump cake","monkey bread") ? "dessert" :
+    has("lemonade","water","cocoa","hot cocoa","juice","milk","coffee","tea","drink") ? "drink" :
+    has("chips","fruit","parfait","granola","yogurt","banana","salad","corn","veggie","veggies","side") ? "side" :
+    "main";
+  if (!["main","side","drink","dessert"].includes(course)) course = detectCourse();
+
+  clean.mealType = mt;
+  clean.course = course;
+  clean.name = r?.name || "Unnamed";
+  clean.serves = Number(r?.serves) || 8;
+  return clean;
+};
   // Guard mealType
   if (mt !== "breakfast" && mt !== "lunch" && mt !== "dinner") mt = "dinner";
 
@@ -477,10 +490,14 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   }, [db, troopId, user]);
 
   // Trip setup
-  const [scouts, setScouts] = useState(8);
-  const [meals, setMeals] = useState({ breakfast: 2, lunch: 2, dinner: 2 });
-  const [campType, setCampType] = useState("car");
-  const [includeDutchOven, setIncludeDutchOven] = useState(false);
+ const [scouts, setScouts] = useState(loadLS('gm_scouts', 8));
+useEffect(() => saveLS('gm_scouts', scouts), [scouts]);
+  const [meals, setMeals] = useState(loadLS('gm_meals', { breakfast: 2, lunch: 2, dinner: 2 }));
+useEffect(() => saveLS('gm_meals', meals), [meals]);
+  const [campType, setCampType] = useState(loadLS('gm_campType', 'car'));
+useEffect(() => saveLS('gm_campType', campType), [campType]);
+  const [includeDutchOven, setIncludeDutchOven] = useState(loadLS('gm_includeDO', false));
+useEffect(() => saveLS('gm_includeDO', includeDutchOven), [includeDutchOven]);
 
   const DIETS = [
     { key: "alphaGalSafe", label: "Alpha-gal safe (no mammal products)" },
@@ -490,15 +507,17 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     { key: "nutFree", label: "Nut-free" },
     { key: "dairyFree", label: "Dairy-free" },
   ];
-  const [diet, setDiet] = useState({});
+  const [diet, setDiet] = useState(loadLS('gm_diet', {}));
+useEffect(() => saveLS('gm_diet', diet), [diet]);
 
   // Data
   const [recipes, setRecipes] = useState(() => {
     const ls = loadLS("gm_recipes", SEED);
     return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED;
   });
+  useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
   const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
-  const [names, setNames] = useState(loadLS("gm_names", ["Patrol A", "Patrol B", "Patrol C"]));
+  const [names, setNames] = useState(loadLS("gm_names", ["Scout 1", "Scout 2", "Scout 3", "Scout 4", "Scout 5", "Scout 6", "Scout 7", "Scout 8"]));
 
   useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
   useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
@@ -566,7 +585,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   // ------------- Menu (auto + editable) -------------
   // Represent menu as slots with a dayIndex (0-based), mealType, course, recipeId
   const COURSES_BASE = ["main", "side", "drink"];
-  const [menu, setMenu] = useState([]);
+ const [menu, setMenu] = useState(loadLS('gm_menu', []));
+useEffect(() => saveLS('gm_menu', menu), [menu]);
 
   // Determine number of days (max of meal counts)
   const dayCount = useMemo(
@@ -596,40 +616,30 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   }, [dayCount, meals.breakfast, meals.lunch, meals.dinner]);
 
   // Auto-generate while preserving edits, now per-day
-  useEffect(() => {
-    const next = neededSlots.map((slot, idx) => {
-      const existing = menu[idx];
-      if (
-        existing &&
-        existing.dayIndex === slot.dayIndex &&
-        existing.mealType === slot.mealType &&
-        existing.course === slot.course
-      ) {
-        return existing;
-      }
-const favs = new Set(favorites);
-let pool = filteredRecipes.filter(
-  (r) => r.mealType === slot.mealType && r.course === slot.course
-);
-// Fallback: if no exact course match, allow MAIN as a substitute (except for dessert)
-if (pool.length === 0 && slot.course !== "dessert") {
-  pool = filteredRecipes.filter(
-    (r) => r.mealType === slot.mealType && ((r.course || "main") === "main")
-  );
-}
-pool = pool.sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
-const pick = pool[0];
-      return {
-        id: uid(),
-        dayIndex: slot.dayIndex,
-        mealType: slot.mealType,
-        course: slot.course,
-        recipeId: pick?.id || "",
-      };
-    });
-    setMenu(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecipes, neededSlots.length, favorites.length]);
+useEffect(() => {
+  const favs = new Set(favorites);
+  const next = neededSlots.map((slot, idx) => {
+    // keep existing choice for same slot (preserve by index as before)
+    const existing = menu[idx];
+    if (existing && existing.mealType === slot.mealType && existing.course === slot.course) {
+      return existing;
+    }
+    // prefer exact course; fallback to a MAIN (except for dessert)
+    let pool = filteredRecipes.filter(
+      r => r.mealType === slot.mealType && ((r.course || 'main') === (slot.course || 'main'))
+    );
+    if (pool.length === 0 && slot.course !== 'dessert') {
+      pool = filteredRecipes.filter(
+        r => r.mealType === slot.mealType && ((r.course || 'main') === 'main')
+      );
+    }
+    pool.sort((a,b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
+    const pick = pool[0];
+    return { id: uid(), mealType: slot.mealType, course: slot.course, recipeId: pick?.id || '' };
+  });
+  setMenu(next);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [filteredRecipes, neededSlots.length, favorites.length]);
 
   const setMenuRecipe = (slotIndex, recipeId) => {
     setMenu((m) => {
