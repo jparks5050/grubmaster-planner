@@ -57,8 +57,10 @@ const loadLS = (k, d) => {
 };
 
 // Normalize (id, mealType, course, arrays)
+// Normalize (id, mealType, course, arrays)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
+
   clean.id = r?.id || uid();
   clean.tags = { ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
@@ -69,25 +71,33 @@ const normalizeRecipe = (r) => {
   let mt = String(r?.mealType || "dinner").trim().toLowerCase();
   let course = String(r?.course || "").trim().toLowerCase();
 
-  // mealType:"dessert" → dinner+dessert (matches how the UI makes dinner slots)
-  if (mt === "dessert") { mt = "dinner"; course = "dessert"; }
+  // mealType:"dessert" → dinner+dessert (matches dinner slots)
+  if (mt === "dessert") {
+    mt = "dinner";
+    course = "dessert";
+  }
   if (!["breakfast", "lunch", "dinner"].includes(mt)) mt = "dinner";
 
   // infer course if missing/invalid
-  const has = (...k) => k.some(kw => name.includes(kw));
+  const has = (...k) => k.some((kw) => name.includes(kw));
   const detectCourse = () =>
     has("cobbler","brownie","cookie","cake","pie","crisp","dump cake","monkey bread") ? "dessert" :
     has("lemonade","water","cocoa","hot cocoa","juice","milk","coffee","tea","drink") ? "drink" :
     has("chips","fruit","parfait","granola","yogurt","banana","salad","corn","veggie","veggies","side") ? "side" :
     "main";
-  if (!["main","side","drink","dessert"].includes(course)) course = detectCourse();
+
+  if (!["main", "side", "drink", "dessert"].includes(course)) {
+    course = detectCourse();
+  }
 
   clean.mealType = mt;
   clean.course = course;
   clean.name = r?.name || "Unnamed";
   clean.serves = Number(r?.serves) || 8;
+
   return clean;
 };
+
   // Guard mealType
   if (mt !== "breakfast" && mt !== "lunch" && mt !== "dinner") mt = "dinner";
 
