@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     lib: {
-      entry: "web-component.js",     // <— the wrapper we just created
+      entry: "web-component.jsx",     // <— the wrapper we just created
       name: "GrubmasterWC",
       formats: ["iife"],             // Browser-friendly single <script> file
       fileName: () => "grubmaster-app.js",
