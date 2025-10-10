@@ -621,9 +621,14 @@ useEffect(() => {
   const next = neededSlots.map((slot, idx) => {
     // keep existing choice for same slot (preserve by index as before)
     const existing = menu[idx];
-    if (existing && existing.mealType === slot.mealType && existing.course === slot.course) {
-      return existing;
-    }
+    if (
+  existing &&
+  existing.mealType === slot.mealType &&
+  existing.course === slot.course &&
+  existing.recipeId // <-- only keep if a real pick exists
+) {
+  return existing; // keep user edit
+}
     // prefer exact course; fallback to a MAIN (except for dessert)
     let pool = filteredRecipes.filter(
       r => r.mealType === slot.mealType && ((r.course || 'main') === (slot.course || 'main'))
@@ -789,6 +794,7 @@ useEffect(() => {
           incoming.map((r) => setDoc(doc(paths.recipesCol, r.id), { ...r, updatedAt: serverTimestamp() }, { merge: true }))
         );
       }
+       setMenu([]);
       setImportMsg(`Imported ${incoming.length} recipe(s).`);
     } catch (e) {
       setImportMsg(`Import failed: ${e?.message || e}`);
