@@ -26,13 +26,12 @@ import stylesUrl from "./src/index.css?url";
       this.shadow = this.attachShadow({ mode: "open" });
 
       // ✅ Load CSS from the **Vercel** origin, not Wix
-      if (stylesUrl) {
-        const link = document.createElement("link");
-        link.rel = "stylesheet";
-        // make absolute using our script’s URL as base
-        link.href = new URL(stylesUrl, thisScriptSrc || window.location.href).href;
-        this.shadow.appendChild(link);
-      }
+   if (stylesUrl) {
+     const link = document.createElement("link");
+     link.rel = "stylesheet";
+     link.href = new URL(stylesUrl, import.meta.url).href; // absolute to Vercel
+     this.shadow.appendChild(link);
+   }
 
       this.mount = document.createElement("div");
       this.shadow.appendChild(this.mount);
