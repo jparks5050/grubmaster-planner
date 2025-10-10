@@ -765,8 +765,9 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
   // UI
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900">
-      <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
+<div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900">
+      {!embed && (
+        <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <h1 className="text-xl font-bold">Scouts BSA Grubmaster Planner</h1>
 
@@ -825,7 +826,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           {importMsg && <span className="ml-3">{importMsg}</span>}
         </div>
       </header>
-
+)}
       <main className="max-w-6xl mx-auto px-4 py-6 grid md:grid-cols-3 gap-6">
         {/* LEFT: Trip Setup + Add/Edit Recipe */}
         <section className="md:col-span-1 space-y-6">
