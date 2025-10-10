@@ -56,7 +56,6 @@ const loadLS = (k, d) => {
   return d;
 };
 
-
 // Normalize (id, mealType, course, arrays)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
@@ -90,7 +89,6 @@ const normalizeRecipe = (r) => {
     course = detectCourse();
   }
 
-  // ✅ write normalized fields back
   clean.mealType = mt;
   clean.course = course;
   clean.name = r?.name || "Unnamed";
@@ -99,8 +97,6 @@ const normalizeRecipe = (r) => {
   return clean;
 };
 
-  // Guard mealType
-  if (mt !== "breakfast" && mt !== "lunch" && mt !== "dinner") mt = "dinner";
 
   // Auto-detect course when missing/invalid (so menu can fill side/drink/dessert slots)
   const detectCourse = () => {
