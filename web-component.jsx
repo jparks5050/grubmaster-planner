@@ -20,47 +20,41 @@ import App from "./src/App.jsx";
   };
 
   class GrubmasterApp extends HTMLElement {
-    constructor() {
-      super();
-      this._shadow = this.attachShadow({ mode: "open" });
-            const link = document.createElement('link');
-link.rel = 'stylesheet';
-link.href = cssHref;          // <- points to the emitted CSS asset
-this._shadow.appendChild(link);
-      // Give it some space even if no CSS is present
-      const mount = document.createElement("div");
-      mount.style.minHeight = "200px";
-      this._shadow.appendChild(mount);
-      this._mount = mount;
-      this._root = null;
-      console.info("[grubmaster-app] constructed");
+  constructor() {
+    super();
+    this._shadow = this.attachShadow({ mode: "open" });
 
-    }
+    // Inject CSS into Shadow DOM (works on Wix and avoids /index.css 404s)
+    const style = document.createElement("style");
+    style.textContent = cssText;
+    this._shadow.appendChild(style);
 
-    static get observedAttributes() { return ["troop", "data-troop", "embed", "debug"]; }
+    const mount = document.createElement("div");
+    this._shadow.appendChild(mount);
+    this._mount = mount;
+    this._root = null;
+  }
 
-    connectedCallback() {
-      try {
-        if (!this._root) this._root = ReactDOM.createRoot(this._mount);
-        this._render();
-        console.info("[grubmaster-app] connected + rendered");
-      } catch (e) {
-        console.error("[grubmaster-app] render error", e);
-        this._shadow.innerHTML = `<pre style="color:#b00020;font:12px/1.4 ui-monospace,monospace;">${String(e && e.stack || e)}</pre>`;
-      }
-    }
+  connectedCallback() {
+    if (!this._root) this._root = ReactDOM.createRoot(this._mount);
+    this._root.render(
+      React.createElement(App, {
+        initialTroopId:
+          this.getAttribute("troop") || this.getAttribute("data-troop") || "",
+        embed: true,
+      })
+    );
+  }
 
-    attributeChangedCallback() {
-      if (this._root) this._render();
-    }
+  disconnectedCallback() {
+    try { this._root?.unmount(); } catch {}
+    this._root = null;
+  }
+}
 
-    disconnectedCallback() {
-      try {
-        if (this._root) { this._root.unmount(); this._root = null; }
-        console.info("[grubmaster-app] unmounted");
-      } catch {}
-    }
-
+if (!customElements.get("grubmaster-app")) {
+  customElements.define("grubmaster-app", GrubmasterApp);
+}
     _render() {
       const troopAttr = this.getAttribute("troop") || this.getAttribute("data-troop") || "";
       const props = {
