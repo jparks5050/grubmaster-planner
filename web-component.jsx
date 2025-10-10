@@ -28,6 +28,10 @@ import App from "./src/App.jsx";
       this._mount = mount;
       this._root = null;
       console.info("[grubmaster-app] constructed");
+      const link = document.createElement('link');
+link.rel = 'stylesheet';
+link.href = cssHref;          // <- points to the emitted CSS asset
+this._shadow.appendChild(link);
     }
 
     static get observedAttributes() { return ["troop", "data-troop", "embed", "debug"]; }
