@@ -394,7 +394,7 @@ const buildRecipesExport = (recipes, meta = {}) => ({
 // ------------------------------------
 // Main App
 // ------------------------------------
-export default function App() {
+export default function App({ initialTroopId = "", embed = false } = {}) {
   // Firebase singletons
   const { auth, db } = useMemo(() => getFirebase(), []);
 
@@ -428,7 +428,7 @@ export default function App() {
   }, [auth]);
 
   // Troop (enables Firestore sync)
-  const [troopId, setTroopId] = useState(loadLS("gm_troop_id", ""));
+  const [troopId, setTroopId] = useState(loadLS("gm_troop_id", initialTroopId || ""));
   useEffect(() => saveLS("gm_troop_id", troopId), [troopId]);
 
   const paths = useMemo(() => {
