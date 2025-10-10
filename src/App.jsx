@@ -56,7 +56,7 @@ const loadLS = (k, d) => {
   return d;
 };
 
-// Normalize (id, mealType, course, arrays)
+
 // Normalize (id, mealType, course, arrays)
 const normalizeRecipe = (r) => {
   const clean = { ...r };
@@ -89,6 +89,16 @@ const normalizeRecipe = (r) => {
   if (!["main", "side", "drink", "dessert"].includes(course)) {
     course = detectCourse();
   }
+
+  // ✅ write normalized fields back
+  clean.mealType = mt;
+  clean.course = course;
+  clean.name = r?.name || "Unnamed";
+  clean.serves = Number(r?.serves) || 8;
+
+  return clean;
+};
+
 
   clean.mealType = mt;
   clean.course = course;
