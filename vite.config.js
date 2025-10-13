@@ -21,6 +21,7 @@ export default defineConfig({
     },
     // Optional but helpful when hosting under a subpath:
     // assetsInlineLimit: 0,
+    cssCodeSplit: false,// keep styles in the lib bundle (we inline them anyway)
   },
 });
 
