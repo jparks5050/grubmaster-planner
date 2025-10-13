@@ -16,7 +16,9 @@ import {
   orderBy,
   deleteDoc,
 } from "firebase/firestore";
-
+// --- array + type guards (put near the top of App.jsx) ---
+const arr = (x) => (Array.isArray(x) ? x : []);
+const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -56,37 +58,29 @@ const loadLS = (k, d) => {
 // ---------------------------
 // Normalization
 // ---------------------------
-const normalizeRecipe = (r) => {
+const normalizeRecipe = (r = {}) => {
   const clean = { ...r };
 
-  clean.id = r?.id || uid();
+  clean.id = r?.id || (crypto?.randomUUID?.() || String(Date.now()));
+  clean.name = String(r?.name || "").trim();
+  clean.mealType = getMealType(r);
+  clean.course = String(r?.course || "").trim().toLowerCase();
+
+  // Always arrays
+  clean.ingredients = arr(r?.ingredients);
+  clean.steps = arr(r?.steps);
   clean.tags = { ...(r?.tags || {}) };
   clean.diet = { ...(r?.diet || {}) };
-  clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
-  clean.steps = Array.isArray(r?.steps) ? r.steps : [];
 
-  const name = String(r?.name || "").toLowerCase();
-  let mt = String(r?.mealType || "dinner").trim().toLowerCase();
-  let course = String(r?.course || "").trim().toLowerCase();
-
-  // "dessert" as mealType becomes dinner+dessert course so it fills dinner slots
-  if (mt === "dessert") { mt = "dinner"; course = "dessert"; }
-  if (!["breakfast", "lunch", "dinner"].includes(mt)) mt = "dinner";
-
-  const has = (...k) => k.some((kw) => name.includes(kw));
-  const detectCourse = () =>
-    has("cobbler","brownie","cookie","cake","pie","crisp","dump cake","monkey bread") ? "dessert" :
-    has("lemonade","water","cocoa","hot cocoa","juice","milk","coffee","tea","drink") ? "drink" :
-    has("chips","fruit","parfait","granola","yogurt","banana","salad","corn","veggie","veggies","side") ? "side" :
-    "main";
-
-  if (!["main", "side", "drink", "dessert"].includes(course)) {
-    course = detectCourse();
+  // Dessert → show in dinner slots but marked dessert
+  if (clean.mealType === "dessert") {
+    clean.mealType = "dinner";
+    if (!clean.course) clean.course = "dessert";
+  }
+  if (!["main", "side", "drink", "dessert"].includes(clean.course)) {
+    clean.course = "main";
   }
 
-  clean.mealType = mt;
-  clean.course = course;
-  clean.name = r?.name || "Unnamed";
   clean.serves = Number(r?.serves) || 8;
   return clean;
 };
