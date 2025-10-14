@@ -1,20 +1,22 @@
 // web-component.jsx
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./src/App.jsx"; // adjust path if your App.jsx lives elsewhere
+import App from "./src/App.jsx";
+
+// IMPORTANT: pull your app styles as a raw string and inject into the shadow root
+// Adjust the path if your CSS lives elsewhere.
+import appCss from "./src/index.css?raw";
 
 const TAG = "grubmaster-app";
 
-function safeBooleanAttr(el, name) {
-  // JSX <grubmaster-app embed></grubmaster-app> => true
+function boolAttr(el, name) {
   return el.hasAttribute(name);
 }
 
 function getProps(el) {
   return {
-    initialTroopId:
-      el.getAttribute("troop") || el.getAttribute("data-troop") || "",
-    embed: safeBooleanAttr(el, "embed"),
+    initialTroopId: el.getAttribute("troop") || el.getAttribute("data-troop") || "",
+    embed: boolAttr(el, "embed"),
   };
 }
 
@@ -27,16 +29,45 @@ if (!customElements.get(TAG)) {
     constructor() {
       super();
       this._mounted = false;
-      // Shadow DOM keeps Wix CSS from interfering
+
+      // Create shadow root so Wix CSS can’t leak in
       this._shadow = this.attachShadow({ mode: "open" });
-      // A container node for React root (inside shadow)
+
+      // Adopt CSS inside the shadow (works in all modern browsers; fallback provided)
+      this._applyStyles();
+
+      // React root container inside the shadow
       this._container = document.createElement("div");
+      // Establish a stable base style so layout doesn’t collapse
+      this._container.style.cssText =
+        "box-sizing:border-box; width:100%; max-width:1200px; margin:0 auto; padding:0;";
       this._shadow.appendChild(this._container);
+
       this._root = null;
     }
 
+    _applyStyles() {
+      const baseReset = `
+        :host{ all: initial; display:block; }
+        *,*::before,*::after{ box-sizing:border-box; }
+      `;
+
+      const fullCss = `${baseReset}\n${appCss || ""}`;
+
+      // Prefer adoptedStyleSheets
+      if ("adoptedStyleSheets" in Document.prototype &&
+          "replaceSync" in CSSStyleSheet.prototype) {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(fullCss);
+        this._shadow.adoptedStyleSheets = [sheet];
+      } else {
+        const style = document.createElement("style");
+        style.textContent = fullCss;
+        this._shadow.appendChild(style);
+      }
+    }
+
     connectedCallback() {
-      // Avoid double-mounts if Wix reattaches
       if (this._mounted) return;
       this._mounted = true;
 
@@ -47,7 +78,6 @@ if (!customElements.get(TAG)) {
     }
 
     disconnectedCallback() {
-      // Clean unmount (prevents dangling roots and #418/#422 class errors)
       if (this._root) {
         this._root.unmount();
         this._root = null;
@@ -56,14 +86,14 @@ if (!customElements.get(TAG)) {
     }
 
     attributeChangedCallback() {
-      // Re-render when attributes change (e.g., troop id)
       if (this._mounted) this._render();
     }
 
     _render() {
-      // Ultra-defensive: never let an undefined value reach App
       const props = getProps(this);
+
       try {
+        // If StrictMode causes double-effects with Wix, you can remove it.
         this._root.render(
           <React.StrictMode>
             <App
@@ -73,13 +103,11 @@ if (!customElements.get(TAG)) {
           </React.StrictMode>
         );
       } catch (err) {
-        // If something goes wrong, show an inline error instead of a blank widget
         const msg = (err && err.message) || String(err);
         this._container.innerHTML = `
           <div style="font:14px/1.4 ui-sans-serif,system-ui; padding:12px; border:1px solid #e11; border-radius:8px; background:#fee;">
             <strong>Grubmaster App Error</strong><br/>${msg}
           </div>`;
-        // eslint-disable-next-line no-console
         console.error("[grubmaster-app] render failed:", err);
       }
     }
