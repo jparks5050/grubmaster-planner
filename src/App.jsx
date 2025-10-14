@@ -1,256 +1,799 @@
-import React, { useMemo, useEffect, useState, useRef } from "react";
+// src/App.jsx — Day-grouped Menu + Duty Roster + Wix-safe CSS (no Tailwind needed)
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/* =========================
-   LocalStorage helpers
-   ========================= */
-const loadLS = (key, fallback) => {
+// --- Firebase (anonymous) ---
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import {
+  getFirestore,
+  collection,
+  doc,
+  addDoc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp,
+  query,
+  orderBy,
+  deleteDoc,
+} from "firebase/firestore";
+
+// ---------- tiny guards ----------
+const arr = (x) => (Array.isArray(x) ? x : []);
+const obj = (x) => (x && typeof x === "object" ? x : {});
+const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+// ---------- Firebase Config via Vite env ----------
+const firebaseCfg = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+function getFirebase() {
+  if (getApps().length === 0) initializeApp(firebaseCfg);
+  return { auth: getAuth(), db: getFirestore() };
+}
+
+// ---------- LS helpers ----------
+const saveLS = (k, v) => {
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
+    localStorage.setItem(k, JSON.stringify(v));
   } catch {
-    return fallback;
+    try {
+      sessionStorage.setItem(k, JSON.stringify(v));
+    } catch {}
   }
 };
+const loadLS = (k, d) => {
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      const raw = store.getItem(k);
+      if (raw != null) {
+        const v = JSON.parse(raw);
+        if (v != null) return v;
+      }
+    } catch {}
+  }
+  return d;
+};
 
-const uid = () =>
-  Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
-
-/* =========================
-   CSS (injected into page)
-   ========================= */
-const baseCss = `
-:host, .gm-root { box-sizing: border-box; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:#111; }
-* { box-sizing: inherit; }
-.gm-root { padding: 16px; }
-.gm-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; align-items: start; }
-.gm-col-12 { grid-column: span 12; }
-.gm-col-6 { grid-column: span 6; }
-.gm-col-4 { grid-column: span 4; }
-.gm-col-3 { grid-column: span 3; }
-@media (max-width: 1000px) {
-  .gm-col-6, .gm-col-4, .gm-col-3 { grid-column: span 12; }
-}
-
-.gm-h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; }
-.gm-h2 { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
-
-.gm-card { background: #fff; border: 1px solid #eee; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-.gm-card-header { padding: 12px 14px; border-bottom: 1px solid #f2f2f2; display:flex; align-items:center; justify-content: space-between; }
-.gm-card-title { font-weight: 700; }
-.gm-card-body { padding: 12px 14px; }
-
-.gm-row { display:flex; gap: 8px; align-items:center; margin-bottom: 8px; }
-.gm-label { width: 110px; color:#555; font-size: 13px; }
-.gm-input, .gm-select, .gm-textarea {
-  width: 100%; border:1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 14px; background: #fff;
-}
-.gm-textarea { min-height: 70px; }
-
-.gm-btn { border: 1px solid #ddd; background:#fafafa; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-.gm-btn:hover { background:#f2f2f2; }
-.gm-btn.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
-.gm-btn.primary:hover { background:#1e55c8; }
-.gm-btn.danger { background:#ef4444; border-color:#ef4444; color:#fff; }
-.gm-btn.danger:hover { background:#d83a3a; }
-.gm-actions { display:flex; gap:8px; flex-wrap:wrap; }
-
-.gm-table { width:100%; border-collapse: collapse; font-size: 14px; }
-.gm-table th, .gm-table td { border-bottom:1px solid #f0f0f0; text-align:left; padding:8px 6px; }
-.gm-table th { font-weight:700; color:#444; }
-
-.gm-day { font-weight: 700; margin: 10px 0 6px; color:#333; }
-
- /* === Layout fixes (no squish) === */
-.gm-card { min-height: 240px; align-self: start; }
-.gm-scroll { max-height: 420px; overflow: auto; }
-.gm-grid { align-items: start; }
-.gm-card.tight .gm-card-body { margin-bottom: 0; padding-bottom: 8px; }
-
-/* List styling */
-.gm-chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#f5f5f5; border:1px solid #eee; font-size:12px; color:#555; margin-right:6px; margin-bottom:4px; }
-
-.small { font-size:12px; color:#666; }
-
-/* Section subtitles */
-.gm-subtle { color:#666; font-weight:600; font-size:12px; letter-spacing: .03em; text-transform:uppercase; }
-`;
-
-/* =========================
-   Recipe normalization
-   ========================= */
-const normalizeRecipe = (r) => {
+// ---------- normalize ----------
+const normalizeRecipe = (r = {}) => {
   const clean = { ...r };
+  clean.id = r?.id || (crypto?.randomUUID?.() || String(Date.now()));
+  clean.name = String(r?.name || "").trim();
+  clean.mealType = getMealType(r);
+  clean.course = String(r?.course || "").trim().toLowerCase();
 
-  clean.id = r?.id || uid();
-  clean.name = String(r?.name || "Unnamed Recipe");
-  clean.tags = { ...(r?.tags || {}) };
-  clean.diet = { ...(r?.diet || {}) };
-  clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
-  clean.steps = Array.isArray(r?.steps) ? r.steps : [];
+  clean.ingredients = arr(r?.ingredients);
+  clean.steps = arr(r?.steps);
+  clean.tags = obj(r?.tags);
+  clean.diet = obj(r?.diet);
 
-  // Guard mealType; allow breakfast, lunch, dinner (dessert becomes dinner+dessert course)
-  const nm = clean.name.toLowerCase();
-  let mt = String(r?.mealType || "dinner").trim().toLowerCase();
-  let course = String(r?.course || "").trim().toLowerCase();
-
-  if (mt === "dessert") {
-    mt = "dinner";
-    course = "dessert";
+  // Dessert -> show in dinner slots
+  if (clean.mealType === "dessert") {
+    clean.mealType = "dinner";
+    if (!clean.course) clean.course = "dessert";
   }
-  if (!["breakfast", "lunch", "dinner"].includes(mt)) mt = "dinner";
+  if (!["main", "side", "drink", "dessert"].includes(clean.course)) clean.course = "main";
 
-  const has = (...k) => k.some((kw) => nm.includes(kw));
-  const detectCourse = () =>
-    has("cobbler","brownie","cookie","cake","pie","crisp","dump cake","monkey bread") ? "dessert" :
-    has("lemonade","water","cocoa","hot cocoa","juice","milk","coffee","tea","drink") ? "drink" :
-    has("chips","fruit","parfait","granola","yogurt","banana","salad","corn","veggie","veggies","side") ? "side" :
-    "main";
-
-  if (!["main", "side", "drink", "dessert"].includes(course)) {
-    course = detectCourse();
-  }
-
-  clean.mealType = mt;
-  clean.course = course;
   clean.serves = Number(r?.serves) || 8;
-
   return clean;
 };
 
-/* =========================
-   Defaults
-   ========================= */
-const defaultRecipes = []; // you can seed if you like
-const defaultNames = Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`);
+// ---------- seed (trim for brevity) ----------
+const SEED = [
+  normalizeRecipe({
+    name: "Dutch Oven Chicken & Veg Pot Pie",
+    mealType: "dinner",
+    course: "main",
+    serves: 8,
+    tags: { dutchOven: true, car: true },
+    ingredients: [
+      { item: "chicken thighs", qtyPerPerson: 0.25, unit: "lb" },
+      { item: "mixed veg (frozen)", qtyPerPerson: 0.5, unit: "cup" },
+      { item: "gravy mix", qtyPerPerson: 0.25, unit: "packet" },
+      { item: "biscuit dough", qtyPerPerson: 1, unit: "biscuit" },
+    ],
+    steps: ["Brown chicken", "Add veg + gravy", "Top w/ biscuits, bake 20–25m"],
+  }),
+  normalizeRecipe({
+    name: "Campfire Corn",
+    mealType: "dinner",
+    course: "side",
+    tags: { car: true, canoe: true },
+    ingredients: [{ item: "corn on the cob", qtyPerPerson: 1, unit: "ear" }],
+    steps: ["Wrap in foil w/ butter + salt", "Roast over coals ~12–15m"],
+  }),
+  normalizeRecipe({
+    name: "Lemonade",
+    mealType: "dinner",
+    course: "drink",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "lemonade mix", qtyPerPerson: 0.5, unit: "scoop" }],
+    steps: ["Mix with water per instructions"],
+  }),
+  normalizeRecipe({
+    name: "Dutch Oven Cobbler",
+    mealType: "dinner",
+    course: "dessert",
+    tags: { dutchOven: true, car: true },
+    ingredients: [
+      { item: "canned pie filling", qtyPerPerson: 0.4, unit: "cup" },
+      { item: "cake mix", qtyPerPerson: 0.1, unit: "box" },
+      { item: "butter", qtyPerPerson: 0.5, unit: "tbsp" },
+    ],
+    steps: ["Layer filling, dry mix, butter pats", "Bake in DO until bubbling"],
+  }),
+  normalizeRecipe({
+    name: "Oatmeal Packs",
+    mealType: "breakfast",
+    course: "main",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [
+      { item: "instant oatmeal", qtyPerPerson: 1.5, unit: "packet" },
+      { item: "dried fruit", qtyPerPerson: 0.25, unit: "cup" },
+    ],
+    steps: ["Boil water", "Mix & serve"],
+  }),
+  normalizeRecipe({
+    name: "Banana",
+    mealType: "breakfast",
+    course: "side",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "banana", qtyPerPerson: 1, unit: "ea" }],
+    steps: ["Serve with oatmeal"],
+  }),
+  normalizeRecipe({
+    name: "Hot Cocoa",
+    mealType: "breakfast",
+    course: "drink",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "cocoa mix", qtyPerPerson: 1, unit: "packet" }],
+    steps: ["Add to hot water & stir"],
+  }),
+  normalizeRecipe({
+    name: "PB&J + Fruit",
+    mealType: "lunch",
+    course: "main",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [
+      { item: "bread", qtyPerPerson: 2, unit: "slice" },
+      { item: "peanut butter", qtyPerPerson: 2, unit: "tbsp" },
+      { item: "jelly", qtyPerPerson: 1, unit: "tbsp" },
+    ],
+    steps: ["Assemble sandwiches"],
+  }),
+  normalizeRecipe({
+    name: "Chips",
+    mealType: "lunch",
+    course: "side",
+    tags: { car: true, canoe: true },
+    ingredients: [{ item: "chips", qtyPerPerson: 1, unit: "bag (snack)" }],
+    steps: ["Serve with sandwiches"],
+  }),
+  normalizeRecipe({
+    name: "Water",
+    mealType: "lunch",
+    course: "drink",
+    tags: { backpacking: true, car: true, canoe: true },
+    ingredients: [{ item: "water", qtyPerPerson: 16, unit: "oz" }],
+    steps: ["Hydrate!"],
+  }),
+];
 
-const defaultTrip = {
-  tripName: "",
-  startDate: "", // YYYY-MM-DD
-  numDays: 2,
-  peopleCount: 8,
-};
+// ---------- small presentational ----------
+const Pill = ({ children }) => <span className="gm-pill">{children}</span>;
 
-const MEALS = ["breakfast", "lunch", "dinner"];
+// ---------- Recipe Form ----------
+function RecipeForm({ initial, onCancel, onSave, dietsList }) {
+  const [draft, setDraft] = useState(
+    initial ||
+      normalizeRecipe({
+        id: uid(),
+        name: "",
+        mealType: "dinner",
+        course: "main",
+        serves: 8,
+        tags: {},
+        diet: {},
+        ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
+        steps: [""],
+      })
+  );
 
-/* =========================
-   Helpers
-   ========================= */
-const fmtDateRange = (startISO, numDays) => {
-  if (!startISO) return "";
-  const start = new Date(startISO + "T00:00:00");
-  if (isNaN(start)) return "";
-  const end = new Date(start);
-  end.setDate(start.getDate() + Math.max(0, (numDays || 1) - 1));
-  const fmt = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate()
-    ).padStart(2, "0")}`;
-  return numDays > 1 ? `${fmt(start)} → ${fmt(end)}` : fmt(start);
-};
-
-const buildDays = (startISO, numDays) => {
-  if (!startISO) return [];
-  const n = Math.max(1, Number(numDays) || 1);
-  const arr = [];
-  const d0 = new Date(startISO + "T00:00:00");
-  if (isNaN(d0)) return [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date(d0);
-    d.setDate(d0.getDate() + i);
-    arr.push(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}-${String(d.getDate()).padStart(2, "0")}`
-    );
-  }
-  return arr;
-};
-
-// Simple menu model: array of { day, mealType, recipeId }
-const buildDutyRoster = (days, names) => {
-  const out = [];
-  const crew = (names || []).map((s) => (s ?? "").trim()).filter(Boolean);
-  if (!crew.length) return out;
-
-  const cyc = (i) => crew[i % crew.length];
-
-  days.forEach((day, dIdx) => {
-    MEALS.forEach((meal, mIdx) => {
-      const base = dIdx * MEALS.length + mIdx;
-      out.push({
-        day,
-        meal,
-        cook: cyc(base),
-        cleanup: cyc(base + 1),
-        fire: cyc(base + 2),
-        water: cyc(base + 3),
-      });
+  const updateIng = (i, patch) =>
+    setDraft((d) => {
+      const a = [...d.ingredients];
+      a[i] = { ...a[i], ...patch };
+      return { ...d, ingredients: a };
     });
-  });
-  return out;
+
+  const updateStep = (i, val) =>
+    setDraft((d) => {
+      const a = [...d.steps];
+      a[i] = val;
+      return { ...d, steps: a };
+    });
+
+  const addIng = () =>
+    setDraft((d) => ({
+      ...d,
+      ingredients: [...d.ingredients, { item: "", qtyPerPerson: 1, unit: "ea" }],
+    }));
+
+  const addStep = () => setDraft((d) => ({ ...d, steps: [...d.steps, ""] }));
+
+  const submit = () => {
+    if (!draft.name.trim()) return alert("Recipe name is required");
+    onSave(normalizeRecipe(draft));
+  };
+
+  return (
+    <div className="gm-card">
+      <h2 className="gm-h2">{initial ? "Edit Recipe" : "Add Recipe"}</h2>
+      <div className="gm-stack">
+        <input
+          className="gm-input"
+          placeholder="Recipe name"
+          value={draft.name}
+          onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+        />
+
+        <div className="gm-grid-3">
+          <div>
+            <label className="gm-label">Meal</label>
+            <select
+              className="gm-select"
+              value={draft.mealType}
+              onChange={(e) => setDraft((d) => ({ ...d, mealType: e.target.value }))}
+            >
+              <option value="breakfast">Breakfast</option>
+              <option value="lunch">Lunch</option>
+              <option value="dinner">Dinner</option>
+            </select>
+          </div>
+          <div>
+            <label className="gm-label">Course</label>
+            <select
+              className="gm-select"
+              value={draft.course}
+              onChange={(e) => setDraft((d) => ({ ...d, course: e.target.value }))}
+            >
+              <option value="main">Main</option>
+              <option value="side">Side</option>
+              <option value="drink">Drink</option>
+              <option value="dessert">Dessert</option>
+            </select>
+          </div>
+          <div>
+            <label className="gm-label">Serves</label>
+            <input
+              type="number"
+              className="gm-input"
+              value={draft.serves}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, serves: Math.max(1, Number(e.target.value) || 1) }))
+              }
+            />
+          </div>
+        </div>
+
+        <div className="gm-grid-2">
+          <div>
+            <label className="gm-label">Tags</label>
+            <div className="gm-chips">
+              {["backpacking", "car", "canoe", "dutchOven"].map((k) => (
+                <label key={k} className="gm-chip">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.tags[k]}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, tags: { ...d.tags, [k]: e.target.checked } }))
+                    }
+                  />
+                  {k === "dutchOven" ? "Dutch oven" : k.charAt(0).toUpperCase() + k.slice(1)}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="gm-label">Diet suitability</label>
+            <div className="gm-chips">
+              {dietsList.map((dk) => (
+                <label key={dk.key} className="gm-chip">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.diet[dk.key]}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, diet: { ...d.diet, [dk.key]: e.target.checked } }))
+                    }
+                  />
+                  {dk.label.split(" (")[0]}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="gm-label gm-bold">Ingredients (per person)</div>
+          {draft.ingredients.map((ing, i) => (
+            <div key={i} className="gm-grid-5">
+              <input
+                className="gm-input"
+                placeholder="item"
+                value={ing.item}
+                onChange={(e) => updateIng(i, { item: e.target.value })}
+              />
+              <input
+                type="number"
+                step="0.05"
+                className="gm-input"
+                placeholder="qty"
+                value={ing.qtyPerPerson}
+                onChange={(e) => updateIng(i, { qtyPerPerson: Number(e.target.value) || 0 })}
+              />
+              <input
+                className="gm-input"
+                placeholder="unit"
+                value={ing.unit}
+                onChange={(e) => updateIng(i, { unit: e.target.value })}
+              />
+              <div className="gm-col-span-2" />
+            </div>
+          ))}
+          <button onClick={addIng} className="gm-btn">+ Ingredient</button>
+        </div>
+
+        <div>
+          <div className="gm-label gm-bold">Steps</div>
+          {draft.steps.map((st, i) => (
+            <input
+              key={i}
+              className="gm-input gm-mt1"
+              placeholder={`Step ${i + 1}`}
+              value={st}
+              onChange={(e) => updateStep(i, e.target.value)}
+            />
+          ))}
+          <button onClick={addStep} className="gm-btn">+ Step</button>
+        </div>
+
+        <div className="gm-row-end">
+          <button onClick={onCancel} className="gm-btn">Cancel</button>
+          <button onClick={submit} className="gm-btn gm-btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Export / Import ----------
+const downloadJSON = (filename, data) => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 };
 
-/* =========================
-   App
-   ========================= */
-export default function App() {
-  // Inject CSS (once)
-  const cssOnce = useRef(false);
-  useEffect(() => {
-    if (cssOnce.current) return;
-    cssOnce.current = true;
-    const style = document.createElement("style");
-    style.setAttribute("data-gm-style", "1");
-    style.textContent = baseCss;
-    document.head.appendChild(style);
-    return () => {
-      try {
-        document.head.removeChild(style);
-      } catch {}
-    };
-  }, []);
+const buildRecipesExport = (recipes, meta = {}) => ({
+  $schema: "https://example.com/schemas/grubmaster/recipes-v1.json",
+  exporter: {
+    app: "Scouts BSA Grubmaster Planner",
+    version: "2.2.0",
+    exportedAt: new Date().toISOString(),
+    ...meta,
+  },
+  recipes: (recipes || []).map((r) => ({
+    id: r.id || uid(),
+    name: r.name || "Unnamed",
+    mealType: r.mealType || "dinner",
+    course: r.course || "main",
+    serves: r.serves || 8,
+    tags: r.tags || {},
+    diet: r.diet || {},
+    ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+    steps: Array.isArray(r.steps) ? r.steps : [],
+  })),
+});
 
-  // Core state
-  const [recipes, setRecipes] = useState(loadLS("gm_recipes", defaultRecipes));
-  const [names, setNames] = useState(loadLS("gm_names", defaultNames));
-  const [trip, setTrip] = useState(loadLS("gm_trip", defaultTrip));
-  const [menu, setMenu] = useState(loadLS("gm_menu", [])); // [{day, mealType, recipeId}]
+// ------------------------------------
+// Main App
+// ------------------------------------
+export default function App({ initialTroopId = "", embed = false } = {}) {
+  const { auth, db } = useMemo(() => getFirebase(), []);
+
+  // Wix-safe, minimal CSS (scoped to this tree)
+  const baseCss = `
+  .gm-root{min-height:100vh;background:linear-gradient(#f8fafc,#fff);color:#0f172a}
+  .gm-header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e5e7eb;backdrop-filter:saturate(180%) blur(8px)}
+  .gm-container{max-width:1120px;margin:0 auto;padding:12px 16px}
+  .gm-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .gm-grid{display:grid;grid-template-columns:1fr;gap:24px}
+  @media (min-width:900px){.gm-grid{grid-template-columns:1fr 2fr}}
+  .gm-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:16px}
+  .gm-h2{font-size:1.1rem;font-weight:600;margin:0 0 10px}
+  .gm-label{font-size:.9rem;color:#334155;margin-bottom:4px;display:block}
+  .gm-bold{font-weight:600}
+  .gm-input,.gm-select,.gm-textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px;font:inherit}
+  .gm-textarea{min-height:96px}
+  .gm-btn{border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:8px 12px;font-size:.9rem;cursor:pointer}
+  .gm-btn-primary{background:#0f172a;color:#fff;border-color:#0f172a}
+  .gm-row-end{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+  .gm-stack{display:grid;gap:10px}
+  .gm-grid-2{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.gm-grid-2{grid-template-columns:1fr 1fr}}
+  .gm-grid-3{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.gm-grid-3{grid-template-columns:repeat(3,1fr)}}
+  .gm-grid-5{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:8px}
+  .gm-col-span-2{grid-column:span 2}
+  .gm-box{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+  .gm-subtle{color:#64748b;font-size:.8rem}
+  .gm-meal{letter-spacing:.05em;text-transform:uppercase;color:#64748b;font-size:.75rem;margin:6px 0}
+  .gm-pill{display:inline-block;padding:2px 8px;border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;font-size:.75rem}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #94a3b8;padding:6px 8px;text-align:left;font-size:.9rem}
+  `;
+
+  // Boot/auth
+  const [phase, setPhase] = useState("boot"); // boot | signed-in | error
+  const [err, setErr] = useState(null);
+  const [user, setUser] = useState(null);
+  const authed = !!user;
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(
+      auth,
+      (u) => {
+        setUser(u || null);
+        setPhase("signed-in");
+      },
+      (e) => {
+        console.error("[Auth] error", e);
+        setErr(e);
+        setPhase("error");
+      }
+    );
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((e) => {
+        console.error("Anon sign-in failed", e);
+        setErr(e);
+        setPhase("error");
+      });
+    }
+    return () => unsub();
+  }, [auth]);
+
+  // Troop (enables Firestore sync)
+  const [troopId, setTroopId] = useState(loadLS("gm_troop_id", initialTroopId || ""));
+  useEffect(() => saveLS("gm_troop_id", troopId), [troopId]);
+
+  const paths = useMemo(() => {
+    if (!db || !troopId) return {};
+    const recipesCol = collection(db, "troops", troopId, "recipes");
+    const settingsDoc = doc(db, "troops", troopId, "meta", "settings");
+    const userDoc = user ? doc(db, "troops", troopId, "users", user.uid) : null;
+    return { recipesCol, settingsDoc, userDoc };
+  }, [db, troopId, user]);
+
+  // Trip setup
+  const [scouts, setScouts] = useState(loadLS("gm_scouts", 10));
+  useEffect(() => saveLS("gm_scouts", scouts), [scouts]);
+
+  const [meals, setMeals] = useState(loadLS("gm_meals", { breakfast: 2, lunch: 2, dinner: 2 }));
+  useEffect(() => saveLS("gm_meals", meals), [meals]);
+
+  const [campType, setCampType] = useState(loadLS("gm_campType", "car"));
+  useEffect(() => saveLS("gm_campType", campType), [campType]);
+
+  const [includeDutchOven, setIncludeDutchOven] = useState(loadLS("gm_includeDO", false));
+  useEffect(() => saveLS("gm_includeDO", includeDutchOven), [includeDutchOven]);
+
+  const DIETS = [
+    { key: "alphaGalSafe", label: "Alpha-gal safe (no mammal products)" },
+    { key: "vegetarian", label: "Vegetarian" },
+    { key: "vegan", label: "Vegan" },
+    { key: "glutenFree", label: "Gluten-free" },
+    { key: "nutFree", label: "Nut-free" },
+    { key: "dairyFree", label: "Dairy-free" },
+  ];
+  const [diet, setDiet] = useState(loadLS("gm_diet", {}));
+  useEffect(() => saveLS("gm_diet", diet), [diet]);
+
+  // Data
+  const [recipes, setRecipes] = useState(() => {
+    const ls = loadLS("gm_recipes", SEED);
+    return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED;
+  });
+  const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
+  const [names, setNames] = useState(
+    loadLS(
+      "gm_names",
+      Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)
+    )
+  );
+
+  useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
+  useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
+  useEffect(() => saveLS("gm_names", names), [names]);
+
+  const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
+
+  // Cloud subscriptions (if Troop ID is set)
+  useEffect(() => {
+    if (!authed || !troopId || !paths.recipesCol) {
+      setSyncInfo((s) => ({ ...s, status: "local-only" }));
+      return;
+    }
+    const subs = [];
+    subs.push(
+      onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
+        const a = snap.docs.map((d) => normalizeRecipe({ id: d.id, ...d.data() }));
+        if (a.length) setRecipes(a);
+        setSyncInfo({ status: "online", last: new Date().toISOString() });
+      })
+    );
+    if (paths.settingsDoc) {
+      subs.push(
+        onSnapshot(paths.settingsDoc, (d) => {
+          const data = d.data();
+          if (Array.isArray(data?.names)) setNames(data.names);
+        })
+      );
+    }
+    if (paths.userDoc) {
+      subs.push(
+        onSnapshot(paths.userDoc, (d) => {
+          const data = d.data();
+          if (Array.isArray(data?.favorites)) setFavorites(data.favorites);
+        })
+      );
+    }
+    return () => subs.forEach((u) => u && u());
+  }, [authed, troopId, paths.recipesCol, paths.settingsDoc, paths.userDoc]);
+
+  // Save names to cloud when changed
+  useEffect(() => {
+    const save = async () => {
+      if (!authed || !troopId || !paths.settingsDoc) return;
+      await setDoc(paths.settingsDoc, { names }, { merge: true });
+      setSyncInfo({ status: "online", last: new Date().toISOString() });
+    };
+    save();
+  }, [names, authed, troopId, paths.settingsDoc]);
+
+  // Filter recipes by trip constraints
+  const filteredRecipes = useMemo(() => {
+    const list = Array.isArray(recipes) ? recipes : [];
+    const d = obj(diet);
+    return list.filter((r) => {
+      const t = obj(r?.tags);
+      const noTagTrue = !t.backpacking && !t.car && !t.canoe && !t.dutchOven; // allow untagged for car
+      if (campType === "backpacking" && !t.backpacking) return false;
+      if (campType === "car" && !(t.car || t.backpacking || t.canoe || noTagTrue)) return false;
+      if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
+      if (!includeDutchOven && t.dutchOven) return false;
+      for (const k of Object.keys(d)) if (d[k] && !r.diet?.[k]) return false;
+      return true;
+    });
+  }, [recipes, campType, includeDutchOven, diet]);
+
+  // Menu (auto + editable) grouped by day
+  const COURSES_BASE = ["main", "side", "drink"];
+  const [menu, setMenu] = useState(loadLS("gm_menu", []));
+  useEffect(() => saveLS("gm_menu", menu), [menu]);
+
+  const dayCount = useMemo(
+    () => Math.max(meals.breakfast || 0, meals.lunch || 0, meals.dinner || 0),
+    [meals]
+  );
+
+  const neededSlots = useMemo(() => {
+    const list = [];
+    for (let d = 0; d < dayCount; d++) {
+      if ((meals.breakfast || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "breakfast", course: c }));
+      }
+      if ((meals.lunch || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "lunch", course: c }));
+      }
+      if ((meals.dinner || 0) > d) {
+        COURSES_BASE.forEach((c) => list.push({ dayIndex: d, mealType: "dinner", course: c }));
+        list.push({ dayIndex: d, mealType: "dinner", course: "dessert" });
+      }
+    }
+    return list;
+  }, [dayCount, meals.breakfast, meals.lunch, meals.dinner]);
+
+  // Auto-generate (preserve edits)
+  useEffect(() => {
+    const favs = new Set(favorites || []);
+    const current = Array.isArray(menu) ? menu : [];
+    const next = neededSlots.map((slot, idx) => {
+      const existing = current[idx];
+      if (
+        existing &&
+        existing.mealType === slot.mealType &&
+        existing.course === slot.course &&
+        existing.recipeId
+      ) {
+        return existing;
+      }
+      // prefer exact course; fallback to MAIN (except dessert)
+      let pool = (filteredRecipes || []).filter(
+        (r) =>
+          r.mealType === slot.mealType &&
+          ((r.course || "main") === (slot.course || "main"))
+      );
+      if (pool.length === 0 && slot.course !== "dessert") {
+        pool = (filteredRecipes || []).filter(
+          (r) => r.mealType === slot.mealType && (r.course || "main") === "main"
+        );
+      }
+      pool.sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
+      const pick = pool[0];
+      return { id: uid(), dayIndex: slot.dayIndex, mealType: slot.mealType, course: slot.course, recipeId: pick?.id || "" };
+    });
+    setMenu(next);
+  }, [filteredRecipes, neededSlots, favorites]);
+
+  const setMenuRecipe = (slotIndex, recipeId) => {
+    setMenu((m) => {
+      const a = Array.isArray(m) ? [...m] : [];
+      if (!a[slotIndex]) return m;
+      a[slotIndex] = { ...a[slotIndex], recipeId };
+      return a;
+    });
+  };
+
+  const menuByDay = useMemo(() => {
+    const grouped = Array.from({ length: dayCount }, () => ({
+      breakfast: [],
+      lunch: [],
+      dinner: [],
+    }));
+    (menu || []).forEach((s) => {
+      const di = Number(s?.dayIndex);
+      const mt = String(s?.mealType || "");
+      if (
+        Number.isInteger(di) &&
+        di >= 0 &&
+        di < grouped.length &&
+        ["breakfast", "lunch", "dinner"].includes(mt)
+      ) {
+        grouped[di][mt].push(s);
+      }
+    });
+    const order = { main: 0, side: 1, drink: 2, dessert: 3 };
+    for (let d = 0; d < grouped.length; d++) {
+      ["breakfast", "lunch", "dinner"].forEach((mt) => {
+        grouped[d][mt].sort((a, b) => (order[a.course] ?? 9) - (order[b.course] ?? 9));
+      });
+    }
+    return grouped;
+  }, [menu, dayCount]);
+
+  // Shopping list
+  function addQty(map, key, qty = 0, unit = "") {
+    const k = `${key}@@${unit}`.toLowerCase();
+    map.set(k, { item: key, unit, qty: (map.get(k)?.qty || 0) + qty });
+  }
+  const shopping = useMemo(() => {
+    const map = new Map();
+    const chosen = (menu || [])
+      .map((m) => (recipes || []).find((r) => r.id === m.recipeId))
+      .filter(Boolean);
+    chosen.forEach((r) => {
+      (r.ingredients || []).forEach((ing) =>
+        addQty(map, ing.item, (Number(ing.qtyPerPerson) || 0) * (Number(scouts) || 0), ing.unit || "")
+      );
+    });
+    addQty(map, "paper towels", Math.ceil((Number(scouts) || 0) / 4), "roll");
+    addQty(map, "trash bags", 2, "ea");
+    return Array.from(map.values()).sort((a, b) => a.item.localeCompare(b.item));
+  }, [menu, recipes, scouts]);
+
+  // Edit / add / delete
+  const [editingId, setEditingId] = useState(null);
+  const startEdit = (id) => setEditingId(id);
+  const cancelEdit = () => setEditingId(null);
+
+  const saveEdited = async (rec) => {
+    const clean = normalizeRecipe(rec);
+    setRecipes((prev) => prev.map((r) => (r.id === clean.id ? clean : r)));
+    if (authed && troopId && paths.recipesCol) {
+      await setDoc(
+        doc(paths.recipesCol, clean.id),
+        { ...clean, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      setSyncInfo({ status: "online", last: new Date().toISOString() });
+    }
+    setEditingId(null);
+  };
+
+  const addNew = async (rec) => {
+    const newR = normalizeRecipe({ ...rec, id: uid() });
+    if (authed && troopId && paths.recipesCol) {
+      await addDoc(paths.recipesCol, {
+        ...newR,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid || "anon",
+      });
+      setSyncInfo({ status: "online", last: new Date().toISOString() });
+    } else {
+      setRecipes((prev) => [newR, ...prev]);
+    }
+  };
+
+  const deleteRecipe = async (id) => {
+    if (!confirm("Delete this recipe?")) return;
+    setRecipes((prev) => prev.filter((r) => r.id !== id));
+    setMenu((m) => (m || []).map((s) => (s.recipeId === id ? { ...s, recipeId: "" } : s)));
+    if (authed && troopId && paths.recipesCol) {
+      try {
+        await deleteDoc(doc(paths.recipesCol, id));
+      } catch (e) {
+        console.warn("Cloud delete failed:", e);
+      }
+    }
+  };
+
+  const setFavoritesCloud = async (list) => {
+    if (!authed || !troopId || !paths.userDoc) return;
+    await setDoc(paths.userDoc, { favorites: list }, { merge: true });
+    setSyncInfo({ status: "online", last: new Date().toISOString() });
+  };
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
+      setFavoritesCloud(next);
+      return next;
+    });
+  };
+
+  // Print
+  const printRef = useRef(null);
+  const handlePrint = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const docW = w.document;
+    docW.write(`<!doctype html><html><head><title>Grubmaster Plan</title>
+      <style>
+        body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
+        h1{margin:0 0 8px}
+        h2{margin:24px 0 8px}
+        h3{margin:12px 0 6px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:12px}
+        .muted{color:#555}
+        .cap{text-transform:capitalize}
+      </style></head><body>`);
+    docW.write(printRef.current?.innerHTML || "");
+    docW.write("</body></html>");
+    docW.close();
+    w.focus();
+    w.print();
+  };
+
+  // Import/Export
+  const importInputRef = useRef(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState("");
 
-  // Persist state (auto-save)
-  useEffect(() => {
-    try {
-      localStorage.setItem("gm_recipes", JSON.stringify(recipes || []));
-    } catch {}
-  }, [recipes]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("gm_names", JSON.stringify(names || []));
-    } catch {}
-  }, [names]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("gm_trip", JSON.stringify(trip || defaultTrip));
-    } catch {}
-  }, [trip]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("gm_menu", JSON.stringify(menu || []));
-    } catch {}
-  }, [menu]);
-
-  const days = useMemo(
-    () => buildDays(trip?.startDate, trip?.numDays),
-    [trip?.startDate, trip?.numDays]
-  );
-
-  /* ---------- Import JSON ---------- */
+  const handleExportJSON = () => {
+    const payload = buildRecipesExport(recipes, {
+      troopId: troopId || "local",
+      user: user?.uid || "anon",
+    });
+    downloadJSON(`recipes-export-${new Date().toISOString()}.json`, payload);
+  };
+  const handleImportJSONClick = () => importInputRef.current?.click();
   const handleImportJSON = async (file) => {
     if (!file) return;
     setImportBusy(true);
@@ -258,553 +801,555 @@ export default function App() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const arr = Array.isArray(data?.recipes)
+      const list = Array.isArray(data?.recipes)
         ? data.recipes
         : Array.isArray(data)
         ? data
         : null;
-      if (!arr)
-        throw new Error(
-          "Invalid file: expected { recipes: [...] } or an array."
-        );
-      const incoming = arr.map(normalizeRecipe);
-
-      // Merge by id
-      const merged = (() => {
-        const map = new Map((recipes || []).map((r) => [r.id, r]));
+      if (!list)
+        throw new Error("Invalid file: expected { recipes: [...] } or an array.");
+      const incoming = list.map(normalizeRecipe);
+      setRecipes((prev) => {
+        const map = new Map((prev || []).map((r) => [r.id, r]));
         incoming.forEach((r) => map.set(r.id, r));
         return Array.from(map.values());
-      })();
-
-      setRecipes(merged);
-
-      // Persist immediately in case Wix preview delays effects
-      try {
-        localStorage.setItem("gm_recipes", JSON.stringify(merged));
-      } catch {}
-
-      setImportMsg(`Imported ${incoming.length} recipes.`);
+      });
+      if (authed && troopId && paths.recipesCol) {
+        await Promise.all(
+          incoming.map((r) =>
+            setDoc(
+              doc(paths.recipesCol, r.id),
+              { ...r, updatedAt: serverTimestamp() },
+              { merge: true }
+            )
+          )
+        );
+      }
+      setMenu([]); // force auto-regenerate after import
+      setImportMsg(`Imported ${incoming.length} recipe(s).`);
     } catch (e) {
-      console.error(e);
-      setImportMsg(e.message || "Import failed.");
+      setImportMsg(`Import failed: ${e?.message || e}`);
     } finally {
       setImportBusy(false);
+      if (importInputRef.current) importInputRef.current.value = "";
     }
   };
 
-  /* ---------- Add a single recipe ---------- */
-  const emptyRecipe = {
-    id: "",
-    name: "",
-    mealType: "dinner",
-    course: "main",
-    serves: trip?.peopleCount || 8,
-    ingredients: [],
-    steps: [],
-    tags: {},
-    diet: {},
-  };
+  if (phase === "boot") {
+    return (
+      <div className="gm-root">
+        <style>{baseCss}</style>
+        <div className="gm-container" style={{ minHeight: "60vh", display: "grid", placeItems: "center" }}>
+          Initializing…
+        </div>
+      </div>
+    );
+  }
+  if (phase === "error") {
+    return (
+      <div className="gm-root">
+        <style>{baseCss}</style>
+        <div className="gm-container" style={{ padding: 24 }}>
+          <h1 className="gm-h2">⚠️ Firebase error</h1>
+          <pre style={{ padding: 12, background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 10, overflow: "auto" }}>
+            {String(err?.message || err)}
+          </pre>
+          <p className="gm-subtle" style={{ marginTop: 8 }}>
+            Check env vars and enable Anonymous Sign-in in Firebase Auth.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  const [draft, setDraft] = useState(emptyRecipe);
-  const addDraftIngredient = () =>
-    setDraft((d) => ({
-      ...d,
-      ingredients: [...(d.ingredients || []), { item: "", qtyPerPerson: "", unit: "" }],
-    }));
-  const updateDraftIngredient = (idx, key, val) =>
-    setDraft((d) => {
-      const next = { ...d, ingredients: [...(d.ingredients || [])] };
-      next.ingredients[idx] = { ...next.ingredients[idx], [key]: val };
-      return next;
-    });
-  const removeDraftIngredient = (idx) =>
-    setDraft((d) => {
-      const next = { ...d, ingredients: [...(d.ingredients || [])] };
-      next.ingredients.splice(idx, 1);
-      return next;
-    });
-
-  const addDraftStep = () =>
-    setDraft((d) => ({ ...d, steps: [...(d.steps || []), ""] }));
-  const updateDraftStep = (idx, val) =>
-    setDraft((d) => {
-      const next = { ...d, steps: [...(d.steps || [])] };
-      next.steps[idx] = val;
-      return next;
-    });
-  const removeDraftStep = (idx) =>
-    setDraft((d) => {
-      const next = { ...d, steps: [...(d.steps || [])] };
-      next.steps.splice(idx, 1);
-      return next;
-    });
-
-  const saveDraft = () => {
-    const toSave = normalizeRecipe(draft);
-    setRecipes((prev) => {
-      const map = new Map((prev || []).map((r) => [r.id, r]));
-      map.set(toSave.id, toSave);
-      const merged = Array.from(map.values());
-      try {
-        localStorage.setItem("gm_recipes", JSON.stringify(merged));
-      } catch {}
-      return merged;
-    });
-    setDraft({ ...emptyRecipe, id: "", name: "" });
-  };
-
-  /* ---------- Menu management ---------- */
-  const recipesByMeal = useMemo(() => {
-    const m = { breakfast: [], lunch: [], dinner: [] };
-    (recipes || []).forEach((r) => m[r.mealType]?.push(r));
-    return m;
-  }, [recipes]);
-
-  const setMenuRecipe = (day, mealType, recipeId) => {
-    setMenu((prev) => {
-      const next = [...(prev || [])];
-      const i = next.findIndex((x) => x.day === day && x.mealType === mealType);
-      if (i >= 0) next[i] = { day, mealType, recipeId };
-      else next.push({ day, mealType, recipeId });
-      return next;
-    });
-  };
-
-  const findRecipe = (id) => (recipes || []).find((r) => r.id === id);
-
-  /* ---------- Shopping List (very basic) ---------- */
-  const shopping = useMemo(() => {
-    // Sum ingredients for selected menu items; multiply qtyPerPerson by trip.peopleCount
-    const need = {};
-    const people = Number(trip?.peopleCount) || 8;
-
-    (menu || []).forEach((slot) => {
-      const rec = findRecipe(slot.recipeId);
-      if (!rec) return;
-      (rec.ingredients || []).forEach((ing) => {
-        const key = `${ing.item}||${ing.unit || ""}`;
-        const qty = Number(ing.qtyPerPerson) || 0;
-        need[key] = (need[key] || 0) + qty * people;
-      });
-    });
-
-    const rows = Object.entries(need).map(([key, total]) => {
-      const [item, unit] = key.split("||");
-      return { item, total, unit };
-    });
-
-    rows.sort((a, b) => a.item.localeCompare(b.item));
-    return rows;
-  }, [menu, recipes, trip?.peopleCount]);
-
-  /* ---------- Duty roster ---------- */
-  const duty = useMemo(() => buildDutyRoster(days, names), [days, names]);
-
-  /* ---------- Reset (clear local) ---------- */
-  const handleResetAll = () => {
-    if (!confirm("Clear all locally saved data?")) return;
-    try {
-      localStorage.removeItem("gm_recipes");
-      localStorage.removeItem("gm_names");
-      localStorage.removeItem("gm_trip");
-      localStorage.removeItem("gm_menu");
-    } catch {}
-    setRecipes(defaultRecipes);
-    setNames(defaultNames);
-    setTrip(defaultTrip);
-    setMenu([]);
-  };
-
+  // ---------- UI ----------
   return (
     <div className="gm-root">
-      {/* Title */}
-      <div className="gm-row" style={{ marginBottom: 12 }}>
-        <div className="gm-h1">Grubmaster Planner</div>
-        <div style={{ marginLeft: "auto" }} className="gm-actions">
-          <button className="gm-btn danger" onClick={handleResetAll}>
-            Start Over (clear local)
-          </button>
-        </div>
-      </div>
+      <style>{baseCss}</style>
 
-      <div className="gm-grid">
-        {/* Trip Setup */}
-        <div className="gm-col-4">
-          <div className="gm-card tight">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Trip Setup</div>
-              <div className="small">{fmtDateRange(trip?.startDate, trip?.numDays)}</div>
-            </div>
-            <div className="gm-card-body">
+      {!embed && (
+        <header className="gm-header">
+          <div className="gm-container">
+            <div className="gm-row">
+              <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>Scouts BSA Grubmaster Planner</h1>
               <div className="gm-row">
-                <label className="gm-label">Trip Name</label>
-                <input
-                  className="gm-input"
-                  value={trip.tripName}
-                  onChange={(e) => setTrip({ ...trip, tripName: e.target.value })}
-                  placeholder="e.g., Oct Campout"
-                />
-              </div>
-              <div className="gm-row">
-                <label className="gm-label">Start Date</label>
-                <input
-                  className="gm-input"
-                  type="date"
-                  value={trip.startDate}
-                  onChange={(e) => setTrip({ ...trip, startDate: e.target.value })}
-                />
-              </div>
-              <div className="gm-row">
-                <label className="gm-label"># Days</label>
-                <input
-                  className="gm-input"
-                  type="number"
-                  min={1}
-                  value={trip.numDays}
-                  onChange={(e) => setTrip({ ...trip, numDays: Number(e.target.value || 1) })}
-                />
-              </div>
-              <div className="gm-row">
-                <label className="gm-label"># People</label>
-                <input
-                  className="gm-input"
-                  type="number"
-                  min={1}
-                  value={trip.peopleCount}
-                  onChange={(e) =>
-                    setTrip({ ...trip, peopleCount: Number(e.target.value || 1) })
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Roster (Scouts 1–10) */}
-        <div className="gm-col-4">
-          <div className="gm-card">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Scouts 1–10</div>
-            </div>
-            <div className="gm-card-body">
-              {Array.from({ length: 10 }).map((_, idx) => (
-                <div key={idx} className="gm-row">
-                  <label className="gm-label">#{idx + 1}</label>
+                <div className="gm-row" style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "4px 8px", background: "#fff" }}>
+                  <span className="gm-subtle">Troop ID:</span>
                   <input
                     className="gm-input"
-                    type="text"
-                    value={names[idx] ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNames((prev) => {
-                        const next = [...(prev || [])];
-                        next[idx] = v;
-                        return next;
-                      });
-                    }}
-                    placeholder={`Scout ${idx + 1}`}
+                    style={{ width: 110 }}
+                    placeholder="e.g. 194"
+                    value={troopId}
+                    onChange={(e) => setTroopId(e.target.value.trim())}
                   />
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Import / Add Recipe */}
-        <div className="gm-col-4">
-          <div className="gm-card tight">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Recipes</div>
-            </div>
-            <div className="gm-card-body">
-              {/* Import */}
-              <div className="gm-row" style={{ alignItems: "center" }}>
-                <label className="gm-label">Import JSON</label>
+                <span className="gm-btn">{authed ? "Connected (anonymous)" : "Connecting…"}</span>
+                <button onClick={handlePrint} className="gm-btn gm-btn-primary">Export PDF</button>
+                <button onClick={handleExportJSON} className="gm-btn">Export JSON</button>
+                <button onClick={handleImportJSONClick} className="gm-btn">Import JSON</button>
                 <input
-                  className="gm-input"
+                  ref={importInputRef}
                   type="file"
-                  accept="application/json"
-                  onChange={(e) => handleImportJSON(e.target.files?.[0])}
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={(e) => handleImportJSON(e.target.files?.[0] || null)}
                 />
               </div>
-              {importBusy ? (
-                <div className="small">Importing…</div>
-              ) : importMsg ? (
-                <div className="small">{importMsg}</div>
-              ) : null}
+            </div>
 
-              <div style={{ height: 8 }} />
+            <div className="gm-subtle" style={{ padding: "4px 0 8px" }}>
+              <span>Sync: </span>
+              <span style={{ color: syncInfo.status === "online" ? "#047857" : syncInfo.status === "local-only" ? "#b45309" : "#475569" }}>
+                {syncInfo.status} {syncInfo.last ? `• ${new Date(syncInfo.last).toLocaleTimeString()}` : ""}
+              </span>
+              {!troopId && <span style={{ marginLeft: 8, color: "#b45309" }}>Enter a Troop ID to share recipes across your troop.</span>}
+              {importBusy && <span style={{ marginLeft: 8 }}>Importing…</span>}
+              {importMsg && <span style={{ marginLeft: 8 }}>{importMsg}</span>}
+            </div>
+          </div>
+        </header>
+      )}
 
-              {/* Add Recipe (compact) */}
-              <div className="gm-subtle" style={{ marginBottom: 6 }}>Add Recipe</div>
-              <div className="gm-row">
-                <label className="gm-label">Name</label>
-                <input
-                  className="gm-input"
-                  value={draft.name}
-                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                  placeholder="Recipe name"
-                />
-              </div>
-              <div className="gm-row">
-                <label className="gm-label">Meal</label>
-                <select
-                  className="gm-select"
-                  value={draft.mealType}
-                  onChange={(e) => setDraft((d) => ({ ...d, mealType: e.target.value }))}
-                >
-                  {MEALS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                  <option value="dinner">dinner</option>
-                </select>
-              </div>
-              <div className="gm-row">
-                <label className="gm-label">Course</label>
-                <select
-                  className="gm-select"
-                  value={draft.course}
-                  onChange={(e) => setDraft((d) => ({ ...d, course: e.target.value }))}
-                >
-                  <option value="main">main</option>
-                  <option value="side">side</option>
-                  <option value="drink">drink</option>
-                  <option value="dessert">dessert</option>
-                </select>
-              </div>
-              <div className="gm-row">
-                <label className="gm-label">Serves</label>
-                <input
-                  className="gm-input"
-                  type="number"
-                  min={1}
-                  value={draft.serves}
-                  onChange={(e) => setDraft((d) => ({ ...d, serves: Number(e.target.value || 1) }))}
-                />
-              </div>
+      <main className="gm-container gm-grid">
+        {/* LEFT */}
+        <section className="gm-stack">
+          <div className="gm-card">
+            <h2 className="gm-h2">Trip Setup</h2>
 
-              <div className="gm-subtle" style={{ margin: "8px 0 6px" }}>Ingredients</div>
-              {(draft.ingredients || []).map((ing, idx) => (
-                <div key={idx} className="gm-row">
+            <label className="gm-label">Number of Scouts</label>
+            <input
+              type="number"
+              min={1}
+              value={scouts}
+              onChange={(e) => setScouts(Math.max(1, Number(e.target.value) || 1))}
+              className="gm-input"
+            />
+
+            <div className="gm-grid-3" style={{ marginTop: 12 }}>
+              {["breakfast", "lunch", "dinner"].map((mt) => (
+                <div key={mt}>
+                  <label className="gm-label" style={{ textTransform: "capitalize" }}>{mt}</label>
                   <input
-                    className="gm-input"
-                    placeholder="Item"
-                    value={ing.item}
-                    onChange={(e) => updateDraftIngredient(idx, "item", e.target.value)}
-                  />
-                  <input
-                    className="gm-input"
-                    placeholder="Qty/Person"
                     type="number"
-                    value={ing.qtyPerPerson}
-                    onChange={(e) => updateDraftIngredient(idx, "qtyPerPerson", e.target.value)}
-                    style={{ maxWidth: 120 }}
-                  />
-                  <input
+                    min={0}
+                    value={meals[mt]}
+                    onChange={(e) =>
+                      setMeals((m) => ({
+                        ...m,
+                        [mt]: Math.max(0, Number(e.target.value) || 0),
+                      }))
+                    }
                     className="gm-input"
-                    placeholder="Unit"
-                    value={ing.unit || ""}
-                    onChange={(e) => updateDraftIngredient(idx, "unit", e.target.value)}
-                    style={{ maxWidth: 120 }}
                   />
-                  <button className="gm-btn" onClick={() => removeDraftIngredient(idx)}>−</button>
                 </div>
               ))}
-              <div className="gm-actions" style={{ marginBottom: 6 }}>
-                <button className="gm-btn" onClick={addDraftIngredient}>+ Ingredient</button>
-              </div>
+            </div>
 
-              <div className="gm-subtle" style={{ margin: "8px 0 6px" }}>Steps</div>
-              {(draft.steps || []).map((st, idx) => (
-                <div key={idx} className="gm-row">
-                  <input
-                    className="gm-input"
-                    placeholder={`Step ${idx + 1}`}
-                    value={st}
-                    onChange={(e) => updateDraftStep(idx, e.target.value)}
-                  />
-                  <button className="gm-btn" onClick={() => removeDraftStep(idx)}>−</button>
-                </div>
+            <label className="gm-label" style={{ marginTop: 12 }}>Camp Type</label>
+            <select
+              value={campType}
+              onChange={(e) => setCampType(e.target.value)}
+              className="gm-select"
+            >
+              {[
+                { key: "backpacking", label: "Backpacking" },
+                { key: "car", label: "Car camping" },
+                { key: "canoe", label: "Canoe/float" },
+              ].map((ct) => (
+                <option key={ct.key} value={ct.key}>{ct.label}</option>
               ))}
-              <div className="gm-actions" style={{ marginBottom: 8 }}>
-                <button className="gm-btn" onClick={addDraftStep}>+ Step</button>
-              </div>
+            </select>
 
-              <div className="gm-actions">
-                <button className="gm-btn primary" onClick={saveDraft}>Save Recipe</button>
-                <button className="gm-btn" onClick={() => setDraft(emptyRecipe)}>Clear</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Library (scroll) */}
-        <div className="gm-col-12">
-          <div className="gm-card gm-scroll">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Recipe Library</div>
-              <div className="small">{(recipes || []).length} total</div>
-            </div>
-            <div className="gm-card-body">
-              {(recipes || []).length === 0 ? (
-                <div className="small">No recipes yet. Import JSON or add one above.</div>
-              ) : (
-                <table className="gm-table">
-                  <thead>
-                    <tr>
-                      <th style={{width: "28%"}}>Name</th>
-                      <th style={{width: "10%"}}>Meal</th>
-                      <th style={{width: "12%"}}>Course</th>
-                      <th style={{width: "8%"}}>Serves</th>
-                      <th>Ingredients</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(recipes || []).map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.name}</td>
-                        <td>{r.mealType}</td>
-                        <td>{r.course}</td>
-                        <td>{r.serves}</td>
-                        <td>
-                          {(r.ingredients || []).slice(0, 4).map((i, ii) => (
-                            <span key={ii} className="gm-chip">
-                              {i.item}{i.unit ? ` (${i.unit})` : ""}
-                            </span>
-                          ))}
-                          {(r.ingredients || []).length > 4 ? <span className="small">+ more</span> : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div style={{ marginTop: 12 }}>
+              <div className="gm-label gm-bold">Dutch oven</div>
+              <label style={{ marginRight: 12 }}>
+                <input
+                  type="radio"
+                  name="dutch"
+                  checked={!includeDutchOven}
+                  onChange={() => setIncludeDutchOven(false)}
+                />{" "}
+                No
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="dutch"
+                  checked={includeDutchOven}
+                  onChange={() => setIncludeDutchOven(true)}
+                />{" "}
+                Yes (include Dutch oven recipes)
+              </label>
+              {campType === "backpacking" && includeDutchOven && (
+                <div className="gm-subtle" style={{ marginTop: 4 }}>
+                  Note: Dutch oven may be impractical for backpacking trips.
+                </div>
               )}
             </div>
-          </div>
-        </div>
 
-        {/* Menu builder (grouped by day) */}
-        <div className="gm-col-6">
-          <div className="gm-card gm-scroll">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Menu (by day)</div>
+            <div style={{ marginTop: 12 }}>
+              <div className="gm-label gm-bold">Dietary Restrictions</div>
+              <div className="gm-stack">
+                {DIETS.map((d) => (
+                  <label key={d.key}>
+                    <input
+                      type="checkbox"
+                      checked={!!diet[d.key]}
+                      onChange={(e) =>
+                        setDiet((prev) => ({ ...prev, [d.key]: e.target.checked }))
+                      }
+                    />{" "}
+                    {d.label}
+                  </label>
+                ))}
+              </div>
             </div>
-            <div className="gm-card-body">
-              {days.length === 0 ? (
-                <div className="small">Pick a start date and # of days in Trip Setup.</div>
-              ) : (
-                days.map((day) => (
-                  <div key={day} style={{ marginBottom: 12 }}>
-                    <div className="gm-day">{day}</div>
-                    {MEALS.map((meal) => {
-                      const choices = recipesByMeal[meal] || [];
-                      const selected = (menu || []).find(
-                        (m) => m.day === day && m.mealType === meal
-                      );
-                      return (
-                        <div key={meal} className="gm-row">
-                          <label className="gm-label" style={{ width: 120, minWidth: 120, textTransform:"capitalize" }}>{meal}</label>
-                          <select
-                            className="gm-select"
-                            value={selected?.recipeId || ""}
-                            onChange={(e) => setMenuRecipe(day, meal, e.target.value)}
-                          >
-                            <option value="">— choose recipe —</option>
-                            {choices.map((r) => (
-                              <option key={r.id} value={r.id}>
-                                {r.name} {r.course !== "main" ? `(${r.course})` : ""}
-                              </option>
-                            ))}
-                          </select>
+          </div>
+
+          {/* Add new or edit selected recipe */}
+          {editingId ? (
+            <RecipeForm
+              key={"edit-" + editingId}
+              initial={(recipes || []).find((r) => r.id === editingId)}
+              onCancel={cancelEdit}
+              onSave={saveEdited}
+              dietsList={DIETS}
+            />
+          ) : (
+            <RecipeForm onCancel={() => {}} onSave={addNew} dietsList={DIETS} />
+          )}
+
+          <div className="gm-card">
+            <h2 className="gm-h2">Scouts (shared)</h2>
+            <textarea
+              className="gm-textarea"
+              value={(names || []).join("\n")}
+              onChange={(e) =>
+                setNames(
+                  e.target.value
+                    .split(/\n+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                )
+              }
+            />
+            <p className="gm-subtle" style={{ marginTop: 6 }}>
+              One name per line. Saved troop-wide when Troop ID is set.
+            </p>
+          </div>
+        </section>
+
+        {/* RIGHT */}
+        <section className="gm-stack">
+          {/* Menu (by day) */}
+          <div className="gm-card">
+            <h2 className="gm-h2">Menu (grouped by day)</h2>
+            {dayCount === 0 && <div className="gm-subtle">Set meal counts on the left to create days.</div>}
+
+            <div className="gm-stack">
+              {menuByDay.map((day, dIdx) => (
+                <div key={dIdx} className="gm-box">
+                  <div className="gm-bold" style={{ marginBottom: 6 }}>Day {dIdx + 1}</div>
+
+                  {["breakfast", "lunch", "dinner"].map(
+                    (mt) =>
+                      day[mt].length > 0 && (
+                        <div key={mt} style={{ marginBottom: 10 }}>
+                          <div className="gm-meal">{mt}</div>
+                          <div className="gm-grid-2">
+                            {day[mt].map((slot) => {
+                              const options = (filteredRecipes || []).filter(
+                                (r) =>
+                                  r.mealType === slot.mealType &&
+                                  (r.course || "main") === (slot.course || "main")
+                              );
+                              const slotIndex = (menu || []).findIndex((s) => s.id === slot.id);
+                              const chosen = (recipes || []).find((r) => r.id === slot.recipeId);
+                              return (
+                                <div key={slot.id} className="gm-box">
+                                  <div className="gm-subtle" style={{ marginBottom: 6, textTransform: "capitalize" }}>
+                                    {slot.course}
+                                  </div>
+                                  <select
+                                    className="gm-select"
+                                    value={slot.recipeId}
+                                    onChange={(e) => setMenuRecipe(slotIndex, e.target.value)}
+                                  >
+                                    <option value="">— Pick a recipe —</option>
+                                    {options.map((r) => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.name}{r.tags?.dutchOven ? " (DO)" : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {chosen && (
+                                    <div className="gm-subtle" style={{ marginTop: 6 }}>
+                                      Serves {chosen.serves}. Scales to {scouts} scouts.
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ))
-              )}
+                      )
+                  )}
+                </div>
+              ))}
             </div>
           </div>
+
+          {/* Library */}
+          <div className="gm-card">
+            <h2 className="gm-h2">
+              Recipes Library {(filteredRecipes || []).length ? `(${filteredRecipes.length} shown)` : ""}
+            </h2>
+            <div className="gm-grid-2" style={{ maxHeight: 380, overflowY: "auto", paddingRight: 6 }}>
+              {(filteredRecipes || []).map((r) => (
+                <div key={r.id} className="gm-box">
+                  <div className="gm-row">
+                    <div className="gm-bold">{r.name}</div>
+                    <div className="gm-row">
+                      <button className="gm-btn" onClick={() => toggleFavorite(r.id)}>
+                        {favorites.includes(r.id) ? "★ Fav" : "☆ Fav"}
+                      </button>
+                      <button className="gm-btn" onClick={() => startEdit(r.id)}>Edit</button>
+                      <button className="gm-btn" style={{ color: "#b91c1c", borderColor: "#ef4444" }} onClick={() => deleteRecipe(r.id)}>Delete</button>
+                    </div>
+                  </div>
+
+                  <div className="gm-subtle" style={{ textTransform: "uppercase" }}>
+                    {r.mealType} • {r.course}
+                  </div>
+                  <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {r.tags?.dutchOven && <Pill>DO</Pill>}
+                    {r.tags?.backpacking && <Pill>Backpacking</Pill>}
+                    {r.tags?.car && <Pill>Car</Pill>}
+                    {r.tags?.canoe && <Pill>Canoe</Pill>}
+                  </div>
+
+                  <details style={{ marginTop: 8 }}>
+                    <summary className="gm-bold" style={{ cursor: "pointer" }}>Details</summary>
+                    <div style={{ marginTop: 6 }}>
+                      <div className="gm-bold">Ingredients (per person)</div>
+                      <ul style={{ marginLeft: 18 }}>
+                        {(r.ingredients || []).map((ing, i) => (
+                          <li key={i}>
+                            {ing.item}: {ing.qtyPerPerson} {ing.unit}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="gm-bold" style={{ marginTop: 6 }}>Steps</div>
+                      <ol style={{ marginLeft: 18 }}>
+                        {(r.steps || []).map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  </details>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Shopping List */}
+          <div className="gm-card">
+            <h2 className="gm-h2">Shopping List</h2>
+            <div className="gm-grid-2">
+              {shopping.map((it, i) => (
+                <div key={i} className="gm-row">
+                  <input type="checkbox" />
+                  <span>{it.item}</span>
+                  <span style={{ marginLeft: "auto" }} className="gm-subtle">
+                    {Number(it.qty.toFixed(2))} {it.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Duty Roster */}
+          <div className="gm-card">
+            <h2 className="gm-h2">Duty Roster</h2>
+            <RosterTable
+              names={names}
+              menu={menu}
+              recipes={recipes}
+              dayCount={dayCount}
+            />
+          </div>
+        </section>
+      </main>
+
+      {/* Print content */}
+      <div style={{ display: "none" }} ref={printRef}>
+        <h1>Troop Duty Roster + Meal Plan</h1>
+        <div className="muted">
+          Scouts: {scouts} · Camp: {["backpacking", "car", "canoe"].includes(campType) ? campType : "car"} ·
+          Dutch oven: {includeDutchOven ? "Yes" : "No"} · Diet:{" "}
+          {Object.keys(obj(diet)).filter((k) => diet[k]).join(", ") || "None"}
         </div>
 
-        {/* Shopping list */}
-        <div className="gm-col-6">
-          <div className="gm-card gm-scroll">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Shopping List</div>
-              <div className="small">For {Number(trip?.peopleCount) || 8} people</div>
-            </div>
-            <div className="gm-card-body">
-              {shopping.length === 0 ? (
-                <div className="small">Select menu items to generate a shopping list.</div>
-              ) : (
-                <table className="gm-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th style={{ width: 120, textAlign:"right" }}>Total</th>
-                      <th style={{ width: 120 }}>Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shopping.map((row, idx) => (
-                      <tr key={idx}>
-                        <td>{row.item}</td>
-                        <td style={{ textAlign: "right" }}>{Number(row.total).toFixed(2)}</td>
-                        <td>{row.unit}</td>
+        {menuByDay.map((day, dIdx) => (
+          <div key={dIdx}>
+            <h2>Day {dIdx + 1} Menu</h2>
+            <table>
+              <thead>
+                <tr><th>Meal</th><th>Course</th><th>Recipe</th></tr>
+              </thead>
+              <tbody>
+                {["breakfast", "lunch", "dinner"].flatMap((mt) =>
+                  day[mt].map((m) => {
+                    const r = (recipes || []).find((rr) => rr.id === m.recipeId);
+                    return (
+                      <tr key={m.id}>
+                        <td style={{ textTransform: "capitalize" }}>{m.mealType}</td>
+                        <td style={{ textTransform: "capitalize" }}>{m.course}</td>
+                        <td>{r?.name || ""}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        ))}
 
-        {/* Duty roster */}
-        <div className="gm-col-12">
-          <div className="gm-card gm-scroll">
-            <div className="gm-card-header">
-              <div className="gm-card-title">Duty Roster</div>
-            </div>
-            <div className="gm-card-body">
-              {days.length === 0 ? (
-                <div className="small">Set your dates first.</div>
-              ) : (
-                days.map((day) => (
-                  <div key={day} style={{ marginBottom: 12 }}>
-                    <div className="gm-day">{day}</div>
-                    <table className="gm-table">
-                      <thead>
-                        <tr>
-                          <th style={{width:120}}>Meal</th>
-                          <th>Cook</th>
-                          <th>Cleanup</th>
-                          <th>Fire</th>
-                          <th>Water</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {MEALS.map((meal) => {
-                          const row = duty.find((r) => r.day === day && r.meal === meal);
-                          return (
-                            <tr key={meal}>
-                              <td style={{textTransform:"capitalize"}}>{meal}</td>
-                              <td>{row?.cook || ""}</td>
-                              <td>{row?.cleanup || ""}</td>
-                              <td>{row?.fire || ""}</td>
-                              <td>{row?.water || ""}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ))
-              )}
-            </div>
+        <h2>Duty Roster</h2>
+        <RosterTable
+          names={names}
+          menu={menu}
+          recipes={recipes}
+          printMode
+          dayCount={dayCount}
+        />
+
+        <h2>Shopping List</h2>
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Qty</th><th>Unit</th></tr>
+          </thead>
+          <tbody>
+            {shopping.map((it, i) => (
+              <tr key={i}>
+                <td>{it.item}</td>
+                <td>{Number(it.qty.toFixed(2))}</td>
+                <td>{it.unit}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <footer className="gm-container" style={{ paddingBottom: 24, textAlign: "center" }}>
+        <span className="gm-subtle">Local fallback; cloud sync when Troop ID is set • Print via Export button</span>
+      </footer>
+    </div>
+  );
+}
+
+// ---------------------------
+// Duty roster helper
+// ---------------------------
+function RosterTable({ names = [], menu = [], recipes = [], printMode = false, dayCount = 0 }) {
+  const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
+
+  const mains = useMemo(() => {
+    const order = [];
+    const byDay = {};
+    (menu || []).forEach((s) => {
+      if (s.course !== "main") return;
+      const di = Number(s?.dayIndex);
+      if (!Number.isInteger(di)) return;
+      if (!byDay[di]) byDay[di] = [];
+      byDay[di].push(s);
+    });
+    Object.keys(byDay)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .forEach((d) => {
+        ["breakfast", "lunch", "dinner"].forEach((mt) => {
+          (byDay[d] || [])
+            .filter((x) => x.mealType === mt)
+            .forEach((x) => order.push(x));
+        });
+      });
+    return order;
+  }, [menu]);
+
+  const duty = mains.map((m, i) => {
+    const assignment = {};
+    roles.forEach((role, rIdx) => {
+      const nlen = (names || []).length || 10;
+      const who = (names || [])[((i + rIdx) % nlen)] || `Scout ${((i + rIdx) % nlen) + 1}`;
+      assignment[role] = who;
+    });
+    return { ...m, assignment };
+  });
+
+  if (printMode) {
+    return (
+      <div>
+        {[...new Set(duty.map((d) => d.dayIndex))].sort((a, b) => a - b).map((d) => (
+          <div key={d}>
+            <h3>Day {d + 1}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Meal</th>
+                  <th>Main</th>
+                  {roles.map((r) => <th key={r}>{r}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {duty.filter((x) => x.dayIndex === d).map((x) => {
+                  const r = (recipes || []).find((rr) => rr.id === x.recipeId);
+                  return (
+                    <tr key={x.id}>
+                      <td style={{ textTransform: "capitalize" }}>{x.mealType}</td>
+                      <td>{r?.name || "—"}</td>
+                      {roles.map((role) => <td key={role}>{x.assignment[role]}</td>)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="gm-stack">
+      {Array.from({ length: dayCount }, (_, d) => d).map((d) => (
+        <div key={d} className="gm-box">
+          <div className="gm-bold" style={{ padding: "4px 6px" }}>Day {d + 1}</div>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Meal</th>
+                  <th>Main</th>
+                  {roles.map((r) => <th key={r}>{r}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {duty.filter((x) => x.dayIndex === d).map((x) => {
+                  const r = (recipes || []).find((rr) => rr.id === x.recipeId);
+                  return (
+                    <tr key={x.id}>
+                      <td style={{ textTransform: "capitalize" }}>{x.mealType}</td>
+                      <td>{r?.name || "—"}</td>
+                      {roles.map((role) => <td key={role}>{x.assignment[role]}</td>)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
