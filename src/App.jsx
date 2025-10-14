@@ -62,17 +62,17 @@ function getFirebase() {
 }
 
 // ---------- LS helpers ----------
-const saveLS = (k, v) => {
+const gmSave = (k, v) => {
   const s = JSON.stringify(v);
   try { localStorage.setItem(k, s); } catch {}
   try { sessionStorage.setItem(k, s); } catch {}
 };
-const saveLS = (k, v) => {
+const gmSave = (k, v) => {
   const s = JSON.stringify(v);
   try { localStorage.setItem(k, s); } catch {}
   try { sessionStorage.setItem(k, s); } catch {}
 };
-const loadLS = (k, d) => {
+const gmLoad = (k, d) => {
   // Prefer the most complete copy between local & session (helps when one store is empty/reset)
   let best = null, score = -1;
  for (const store of [localStorage, sessionStorage]) {
@@ -502,8 +502,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   }, [auth]);
 
   // Troop (enables Firestore sync)
-  const [troopId, setTroopId] = useState(loadLS("gm_troop_id", initialTroopId || ""));
-  useEffect(() => saveLS("gm_troop_id", troopId), [troopId]);
+  const [troopId, setTroopId] = useState(gmLoad("gm_troop_id", initialTroopId || ""));
+  useEffect(() => gmSave("gm_troop_id", troopId), [troopId]);
 
   const paths = useMemo(() => {
     if (!db || !troopId) return {};
@@ -514,17 +514,17 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   }, [db, troopId, user]);
 
   // Trip setup (trimmed whitespace by keeping spacing tight)
-  const [scouts, setScouts] = useState(loadLS("gm_scouts", 10));
-  useEffect(() => saveLS("gm_scouts", scouts), [scouts]);
+  const [scouts, setScouts] = useState(gmLoad("gm_scouts", 10));
+  useEffect(() => gmSave("gm_scouts", scouts), [scouts]);
 
-  const [meals, setMeals] = useState(loadLS("gm_meals", { breakfast: 2, lunch: 2, dinner: 2 }));
-  useEffect(() => saveLS("gm_meals", meals), [meals]);
+  const [meals, setMeals] = useState(gmLoad("gm_meals", { breakfast: 2, lunch: 2, dinner: 2 }));
+  useEffect(() => gmSave("gm_meals", meals), [meals]);
 
-  const [campType, setCampType] = useState(loadLS("gm_campType", "car"));
-  useEffect(() => saveLS("gm_campType", campType), [campType]);
+  const [campType, setCampType] = useState(gmLoad("gm_campType", "car"));
+  useEffect(() => gmSave("gm_campType", campType), [campType]);
 
-  const [includeDutchOven, setIncludeDutchOven] = useState(loadLS("gm_includeDO", false));
-  useEffect(() => saveLS("gm_includeDO", includeDutchOven), [includeDutchOven]);
+  const [includeDutchOven, setIncludeDutchOven] = useState(gmLoad("gm_includeDO", false));
+  useEffect(() => gmSave("gm_includeDO", includeDutchOven), [includeDutchOven]);
 
   const DIETS = [
     { key: "alphaGalSafe", label: "Alpha-gal safe (no mammal products)" },
@@ -534,22 +534,22 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     { key: "nutFree", label: "Nut-free" },
     { key: "dairyFree", label: "Dairy-free" },
   ];
-  const [diet, setDiet] = useState(loadLS("gm_diet", {}));
-  useEffect(() => saveLS("gm_diet", diet), [diet]);
+  const [diet, setDiet] = useState(gmLoad("gm_diet", {}));
+  useEffect(() => gmSave("gm_diet", diet), [diet]);
 
   // Data
   const [recipes, setRecipes] = useState(() => {
-    const ls = loadLS("gm_recipes", SEED);
+    const ls = gmLoad("gm_recipes", SEED);
     return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED;
   });
-  const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
+  const [favorites, setFavorites] = useState(gmLoad("gm_favorites", []));
   const [names, setNames] = useState(
-    ensureTen(loadLS("gm_names", Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)))
+    ensureTen(gmLoad("gm_names", Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)))
   );
 
-  useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
-  useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
-  useEffect(() => saveLS("gm_names", ensureTen(names)), [names]);
+  useEffect(() => gmSave("gm_recipes", recipes), [recipes]);
+  useEffect(() => gmSave("gm_favorites", favorites), [favorites]);
+  useEffect(() => gmSave("gm_names", ensureTen(names)), [names]);
 
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
@@ -620,8 +620,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
   // Menu (auto + editable) grouped by day
   const COURSES_BASE = ["main", "side", "drink"];
-  const [menu, setMenu] = useState(loadLS("gm_menu", []));
-  useEffect(() => saveLS("gm_menu", menu), [menu]);
+  const [menu, setMenu] = useState(gmLoad("gm_menu", []));
+  useEffect(() => gmSave("gm_menu", menu), [menu]);
 
   const dayCount = useMemo(
     () => Math.max(meals.breakfast || 0, meals.lunch || 0, meals.dinner || 0),
@@ -851,7 +851,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         return Array.from(map.values());
       })(recipes);
       setRecipes(merged);
-      saveLS("gm_recipes", merged); // persist right away
+      gmSave("gm_recipes", merged); // persist right away
       if (authed && troopId && paths.recipesCol) {
         await Promise.all(
           incoming.map((r) =>
