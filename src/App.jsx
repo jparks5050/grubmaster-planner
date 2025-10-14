@@ -47,17 +47,21 @@ const saveLS = (k, v) => {
   try { localStorage.setItem(k, s); } catch {}
   try { sessionStorage.setItem(k, s); } catch {}
 };
+const saveLS = (k, v) => {
+  const s = JSON.stringify(v);
+  try { localStorage.setItem(k, s); } catch {}
+  try { sessionStorage.setItem(k, s); } catch {}
+};
 const loadLS = (k, d) => {
-  let best = null;
-  let bestLen = -1;
-  for (const store of [localStorage, sessionStorage]) {
+  // Prefer the most complete copy between local & session (helps when one store is empty/reset)
+  let best = null, score = -1;
+ for (const store of [localStorage, sessionStorage]) {
     try {
       const raw = store.getItem(k);
       if (raw != null) {
         const v = JSON.parse(raw);
-        // prefer the one with more items (useful for arrays like recipes)
-        const score = Array.isArray(v) ? v.length : 1;
-        if (v != null && score > bestLen) { best = v; bestLen = score; }
+        const sc = Array.isArray(v) ? v.length : (v ? 1 : -1);
+        if (v != null && sc > score) { best = v; score = sc; }
       }
     } catch {}
   }
