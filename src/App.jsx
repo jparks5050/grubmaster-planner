@@ -42,27 +42,27 @@ function getFirebase() {
 }
 
 // ---------- LS helpers ----------
-+const saveLS = (k, v) => {
-+  const s = JSON.stringify(v);
-+  try { localStorage.setItem(k, s); } catch {}
-+  try { sessionStorage.setItem(k, s); } catch {}
-+};
-+const loadLS = (k, d) => {
-+  let best = null;
-+  let bestLen = -1;
-+  for (const store of [localStorage, sessionStorage]) {
-+    try {
-+      const raw = store.getItem(k);
-+      if (raw != null) {
-+        const v = JSON.parse(raw);
-+        // prefer the one with more items (useful for arrays like recipes)
-+        const score = Array.isArray(v) ? v.length : 1;
-+        if (v != null && score > bestLen) { best = v; bestLen = score; }
-+      }
-+    } catch {}
-+  }
-+  return best != null ? best : d;
-+};
+const saveLS = (k, v) => {
+  const s = JSON.stringify(v);
+  try { localStorage.setItem(k, s); } catch {}
+  try { sessionStorage.setItem(k, s); } catch {}
+};
+const loadLS = (k, d) => {
+  let best = null;
+  let bestLen = -1;
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      const raw = store.getItem(k);
+      if (raw != null) {
+        const v = JSON.parse(raw);
+        // prefer the one with more items (useful for arrays like recipes)
+        const score = Array.isArray(v) ? v.length : 1;
+        if (v != null && score > bestLen) { best = v; bestLen = score; }
+      }
+    } catch {}
+  }
+  return best != null ? best : d;
+};
 
 // ---------- normalize ----------
 const normalizeRecipe = (r = {}) => {
