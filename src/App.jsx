@@ -1,6 +1,4 @@
-// src/App.jsx — Day-grouped Menu (Breakfast, Lunch, Dinner per day)
-// Safer guards added: robust array/object checks, filteredRecipes fallback,
-// safe options usage, validated menu grouping.
+// src/App.jsx — Day-grouped Menu + Duty Roster + Wix-safe CSS (no Tailwind needed)
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
@@ -20,11 +18,11 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 
-// --- array + type guards ---
+// ---------- tiny guards ----------
 const arr = (x) => (Array.isArray(x) ? x : []);
 const obj = (x) => (x && typeof x === "object" ? x : {});
 const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
-const A = (x) => (Array.isArray(x) ? x : []);
+const uid = () => Math.random().toString(36).slice(2, 10);
 
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
@@ -33,16 +31,12 @@ const firebaseCfg = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
-
 function getFirebase() {
   if (getApps().length === 0) initializeApp(firebaseCfg);
   return { auth: getAuth(), db: getFirestore() };
 }
 
-// ---------------------------
-// Utilities & Local Storage
-// ---------------------------
-const uid = () => Math.random().toString(36).slice(2, 10);
+// ---------- LS helpers ----------
 const saveLS = (k, v) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
@@ -65,37 +59,31 @@ const loadLS = (k, d) => {
   return d;
 };
 
-// ---------------------------
-// Normalization
-// ---------------------------
+// ---------- normalize ----------
 const normalizeRecipe = (r = {}) => {
   const clean = { ...r };
-
   clean.id = r?.id || (crypto?.randomUUID?.() || String(Date.now()));
   clean.name = String(r?.name || "").trim();
   clean.mealType = getMealType(r);
   clean.course = String(r?.course || "").trim().toLowerCase();
 
-  // Always arrays/objects
   clean.ingredients = arr(r?.ingredients);
   clean.steps = arr(r?.steps);
   clean.tags = obj(r?.tags);
   clean.diet = obj(r?.diet);
 
-  // Dessert → show in dinner slots but marked dessert
+  // Dessert -> show in dinner slots
   if (clean.mealType === "dessert") {
     clean.mealType = "dinner";
     if (!clean.course) clean.course = "dessert";
   }
-  if (!["main", "side", "drink", "dessert"].includes(clean.course)) {
-    clean.course = "main";
-  }
+  if (!["main", "side", "drink", "dessert"].includes(clean.course)) clean.course = "main";
 
   clean.serves = Number(r?.serves) || 8;
   return clean;
 };
 
-// ---------- Seed data (course-aware) ----------
+// ---------- seed (trim for brevity) ----------
 const SEED = [
   normalizeRecipe({
     name: "Dutch Oven Chicken & Veg Pot Pie",
@@ -109,7 +97,7 @@ const SEED = [
       { item: "gravy mix", qtyPerPerson: 0.25, unit: "packet" },
       { item: "biscuit dough", qtyPerPerson: 1, unit: "biscuit" },
     ],
-    steps: ["Brown chicken", "Add veg + gravy", "Top with biscuits, bake 20–25m"],
+    steps: ["Brown chicken", "Add veg + gravy", "Top w/ biscuits, bake 20–25m"],
   }),
   normalizeRecipe({
     name: "Campfire Corn",
@@ -196,16 +184,12 @@ const SEED = [
   }),
 ];
 
-// ------------------------------------
-// Small Presentational Helper
-// ------------------------------------
+// ---------- small presentational ----------
 const Pill = ({ children }) => (
-  <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 border">{children}</span>
+  <span className="gm-pill">{children}</span>
 );
 
-// ------------------------------------
-// Recipe Form (Add/Edit)
-// ------------------------------------
+// ---------- Recipe Form ----------
 function RecipeForm({ initial, onCancel, onSave, dietsList }) {
   const [draft, setDraft] = useState(
     initial ||
@@ -250,20 +234,21 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
   };
 
   return (
-    <div className="p-4 bg-white rounded-2xl shadow">
-      <h2 className="text-lg font-semibold mb-3">{initial ? "Edit Recipe" : "Add Recipe"}</h2>
-      <div className="grid grid-cols-1 gap-2">
+    <div className="gm-card">
+      <h2 className="gm-h2">{initial ? "Edit Recipe" : "Add Recipe"}</h2>
+      <div className="gm-stack">
         <input
-          className="border rounded-lg px-3 py-2"
+          className="gm-input"
           placeholder="Recipe name"
           value={draft.name}
           onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
         />
-        <div className="grid grid-cols-3 gap-2">
+
+        <div className="gm-grid-3">
           <div>
-            <label className="text-sm">Meal</label>
+            <label className="gm-label">Meal</label>
             <select
-              className="w-full border rounded-lg px-3 py-2"
+              className="gm-select"
               value={draft.mealType}
               onChange={(e) => setDraft((d) => ({ ...d, mealType: e.target.value }))}
             >
@@ -273,9 +258,9 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
             </select>
           </div>
           <div>
-            <label className="text-sm">Course</label>
+            <label className="gm-label">Course</label>
             <select
-              className="w-full border rounded-lg px-3 py-2"
+              className="gm-select"
               value={draft.course}
               onChange={(e) => setDraft((d) => ({ ...d, course: e.target.value }))}
             >
@@ -286,10 +271,10 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
             </select>
           </div>
           <div>
-            <label className="text-sm">Serves</label>
+            <label className="gm-label">Serves</label>
             <input
               type="number"
-              className="w-full border rounded-lg px-3 py-2"
+              className="gm-input"
               value={draft.serves}
               onChange={(e) =>
                 setDraft((d) => ({ ...d, serves: Math.max(1, Number(e.target.value) || 1) }))
@@ -298,12 +283,12 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="gm-grid-2">
           <div>
-            <label className="text-sm">Tags</label>
-            <div className="flex gap-2 items-center text-sm mt-1 flex-wrap">
+            <label className="gm-label">Tags</label>
+            <div className="gm-chips">
               {["backpacking", "car", "canoe", "dutchOven"].map((k) => (
-                <label key={k} className="inline-flex items-center gap-1">
+                <label key={k} className="gm-chip">
                   <input
                     type="checkbox"
                     checked={!!draft.tags[k]}
@@ -317,10 +302,10 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
             </div>
           </div>
           <div>
-            <label className="text-sm">Diet suitability</label>
-            <div className="flex gap-3 items-center text-sm mt-1 flex-wrap">
+            <label className="gm-label">Diet suitability</label>
+            <div className="gm-chips">
               {dietsList.map((dk) => (
-                <label key={dk.key} className="inline-flex items-center gap-1">
+                <label key={dk.key} className="gm-chip">
                   <input
                     type="checkbox"
                     checked={!!draft.diet[dk.key]}
@@ -336,11 +321,11 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         </div>
 
         <div>
-          <div className="text-sm font-medium">Ingredients (per person)</div>
+          <div className="gm-label gm-bold">Ingredients (per person)</div>
           {draft.ingredients.map((ing, i) => (
-            <div key={i} className="grid grid-cols-5 gap-2 mt-1">
+            <div key={i} className="gm-grid-5">
               <input
-                className="col-span-3 border rounded-lg px-2 py-1"
+                className="gm-input"
                 placeholder="item"
                 value={ing.item}
                 onChange={(e) => updateIng(i, { item: e.target.value })}
@@ -348,54 +333,47 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
               <input
                 type="number"
                 step="0.05"
-                className="border rounded-lg px-2 py-1"
+                className="gm-input"
                 placeholder="qty"
                 value={ing.qtyPerPerson}
                 onChange={(e) => updateIng(i, { qtyPerPerson: Number(e.target.value) || 0 })}
               />
               <input
-                className="border rounded-lg px-2 py-1"
+                className="gm-input"
                 placeholder="unit"
                 value={ing.unit}
                 onChange={(e) => updateIng(i, { unit: e.target.value })}
               />
+              <div className="gm-col-span-2" />
             </div>
           ))}
-          <button onClick={addIng} className="mt-2 text-sm px-2 py-1 rounded border">
-            + Ingredient
-          </button>
+          <button onClick={addIng} className="gm-btn">+ Ingredient</button>
         </div>
 
         <div>
-          <div className="text-sm font-medium">Steps</div>
+          <div className="gm-label gm-bold">Steps</div>
           {draft.steps.map((st, i) => (
             <input
               key={i}
-              className="w-full border rounded-lg px-2 py-1 mt-1"
+              className="gm-input gm-mt1"
               placeholder={`Step ${i + 1}`}
               value={st}
               onChange={(e) => updateStep(i, e.target.value)}
             />
           ))}
-          <button onClick={addStep} className="mt-2 text-sm px-2 py-1 rounded border">
-            + Step
-          </button>
+          <button onClick={addStep} className="gm-btn">+ Step</button>
         </div>
 
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border">
-            Cancel
-          </button>
-          <button onClick={submit} className="px-3 py-1.5 rounded-lg text-white bg-emerald-600">
-            Save
-          </button>
+        <div className="gm-row-end">
+          <button onClick={onCancel} className="gm-btn">Cancel</button>
+          <button onClick={submit} className="gm-btn gm-btn-primary">Save</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ---------- Export / Import helpers ----------
+// ---------- Export / Import ----------
 const downloadJSON = (filename, data) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -410,7 +388,7 @@ const buildRecipesExport = (recipes, meta = {}) => ({
   $schema: "https://example.com/schemas/grubmaster/recipes-v1.json",
   exporter: {
     app: "Scouts BSA Grubmaster Planner",
-    version: "2.1.0",
+    version: "2.2.0",
     exportedAt: new Date().toISOString(),
     ...meta,
   },
@@ -432,6 +410,38 @@ const buildRecipesExport = (recipes, meta = {}) => ({
 // ------------------------------------
 export default function App({ initialTroopId = "", embed = false } = {}) {
   const { auth, db } = useMemo(() => getFirebase(), []);
+
+  // Wix-safe, minimal CSS (scoped to this tree)
+  const baseCss = `
+  .gm-root{min-height:100vh;background:linear-gradient(#f8fafc,#fff);color:#0f172a}
+  .gm-header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #e5e7eb;backdrop-filter:saturate(180%) blur(8px)}
+  .gm-container{max-width:1120px;margin:0 auto;padding:12px 16px}
+  .gm-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .gm-grid{display:grid;grid-template-columns:1fr;gap:24px}
+  @media (min-width:900px){.gm-grid{grid-template-columns:1fr 2fr}}
+  .gm-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:16px}
+  .gm-h2{font-size:1.1rem;font-weight:600;margin:0 0 10px}
+  .gm-label{font-size:.9rem;color:#334155;margin-bottom:4px;display:block}
+  .gm-bold{font-weight:600}
+  .gm-input,.gm-select,.gm-textarea{width:100%;border:1px solid #cbd5e1;border-radius:10px;padding:8px 10px;font:inherit}
+  .gm-textarea{min-height:96px}
+  .gm-btn{border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:8px 12px;font-size:.9rem;cursor:pointer}
+  .gm-btn-primary{background:#0f172a;color:#fff;border-color:#0f172a}
+  .gm-row-end{display:flex;gap:8px;justify-content:flex-end;align-items:center}
+  .gm-stack{display:grid;gap:10px}
+  .gm-grid-2{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.gm-grid-2{grid-template-columns:1fr 1fr}}
+  .gm-grid-3{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width:700px){.gm-grid-3{grid-template-columns:repeat(3,1fr)}}
+  .gm-grid-5{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:8px}
+  .gm-col-span-2{grid-column:span 2}
+  .gm-box{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+  .gm-subtle{color:#64748b;font-size:.8rem}
+  .gm-meal{letter-spacing:.05em;text-transform:uppercase;color:#64748b;font-size:.75rem;margin:6px 0}
+  .gm-pill{display:inline-block;padding:2px 8px;border:1px solid #e5e7eb;border-radius:999px;background:#f8fafc;font-size:.75rem}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #94a3b8;padding:6px 8px;text-align:left;font-size:.9rem}
+  `;
 
   // Boot/auth
   const [phase, setPhase] = useState("boot"); // boot | signed-in | error
@@ -475,7 +485,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   }, [db, troopId, user]);
 
   // Trip setup
-  const [scouts, setScouts] = useState(loadLS("gm_scouts", 8));
+  const [scouts, setScouts] = useState(loadLS("gm_scouts", 10));
   useEffect(() => saveLS("gm_scouts", scouts), [scouts]);
 
   const [meals, setMeals] = useState(loadLS("gm_meals", { breakfast: 2, lunch: 2, dinner: 2 }));
@@ -505,16 +515,10 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   });
   const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
   const [names, setNames] = useState(
-    loadLS("gm_names", [
-      "Scout 1",
-      "Scout 2",
-      "Scout 3",
-      "Scout 4",
-      "Scout 5",
-      "Scout 6",
-      "Scout 7",
-      "Scout 8",
-    ])
+    loadLS(
+      "gm_names",
+      Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)
+    )
   );
 
   useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
@@ -523,7 +527,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
-  // Cloud subscriptions (when possible)
+  // Cloud subscriptions
   useEffect(() => {
     if (!authed || !troopId || !paths.recipesCol) {
       setSyncInfo((s) => ({ ...s, status: "local-only" }));
@@ -566,7 +570,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     save();
   }, [names, authed, troopId, paths.settingsDoc]);
 
-  // Filtering recipes by trip constraints (SAFE)
+  // Filter recipes by trip constraints
   const filteredRecipes = useMemo(() => {
     const list = Array.isArray(recipes) ? recipes : [];
     const d = obj(diet);
@@ -582,7 +586,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     });
   }, [recipes, campType, includeDutchOven, diet]);
 
-  // ------------- Menu (auto + editable) -------------
+  // Menu (auto + editable) grouped by day
   const COURSES_BASE = ["main", "side", "drink"];
   const [menu, setMenu] = useState(loadLS("gm_menu", []));
   useEffect(() => saveLS("gm_menu", menu), [menu]);
@@ -609,7 +613,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return list;
   }, [dayCount, meals.breakfast, meals.lunch, meals.dinner]);
 
-  // Auto-generate while preserving edits, now per-day (SAFE)
+  // Auto-generate (preserve edits) — depend on full arrays, not just lengths
   useEffect(() => {
     const favs = new Set(favorites || []);
     const current = Array.isArray(menu) ? menu : [];
@@ -621,7 +625,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         existing.course === slot.course &&
         existing.recipeId
       ) {
-        return existing; // keep user edit
+        return existing;
       }
       // prefer exact course; fallback to MAIN (except dessert)
       let pool = (filteredRecipes || []).filter(
@@ -636,11 +640,10 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       }
       pool.sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
       const pick = pool[0];
-      return { id: uid(), mealType: slot.mealType, course: slot.course, recipeId: pick?.id || "" };
+      return { id: uid(), dayIndex: slot.dayIndex, mealType: slot.mealType, course: slot.course, recipeId: pick?.id || "" };
     });
     setMenu(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecipes, neededSlots.length, favorites.length]);
+  }, [filteredRecipes, neededSlots, favorites]); // <— key fix
 
   const setMenuRecipe = (slotIndex, recipeId) => {
     setMenu((m) => {
@@ -678,7 +681,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return grouped;
   }, [menu, dayCount]);
 
-  // ------------ Shopping list from menu ------------
+  // Shopping list
   function addQty(map, key, qty = 0, unit = "") {
     const k = `${key}@@${unit}`.toLowerCase();
     map.set(k, { item: key, unit, qty: (map.get(k)?.qty || 0) + qty });
@@ -698,7 +701,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return Array.from(map.values()).sort((a, b) => a.item.localeCompare(b.item));
   }, [menu, recipes, scouts]);
 
-  // ------------- Recipe Library actions (incl. cloud) -------------
+  // Edit / add / delete
   const [editingId, setEditingId] = useState(null);
   const startEdit = (id) => setEditingId(id);
   const cancelEdit = () => setEditingId(null);
@@ -739,7 +742,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       try {
         await deleteDoc(doc(paths.recipesCol, id));
       } catch (e) {
-        console.warn("Cloud delete failed (maybe imported seed):", e);
+        console.warn("Cloud delete failed:", e);
       }
     }
   };
@@ -793,9 +796,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     });
     downloadJSON(`recipes-export-${new Date().toISOString()}.json`, payload);
   };
-
   const handleImportJSONClick = () => importInputRef.current?.click();
-
   const handleImportJSON = async (file) => {
     if (!file) return;
     setImportBusy(true);
@@ -827,7 +828,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           )
         );
       }
-      setMenu([]); // force auto-regenerate with new library
+      setMenu([]); // force auto-regenerate
       setImportMsg(`Imported ${incoming.length} recipe(s).`);
     } catch (e) {
       setImportMsg(`Import failed: ${e?.message || e}`);
@@ -837,125 +838,100 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     }
   };
 
-  // Boot/Error
   if (phase === "boot") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-700">
-        Initializing…
+      <div className="gm-root">
+        <style>{baseCss}</style>
+        <div className="gm-container" style={{ minHeight: "60vh", display: "grid", placeItems: "center" }}>
+          Initializing…
+        </div>
       </div>
     );
   }
   if (phase === "error") {
     return (
-      <div className="min-h-screen p-6 text-slate-800">
-        <h1 className="text-xl font-semibold mb-2">⚠️ Firebase error</h1>
-        <pre className="p-3 bg-slate-100 rounded border overflow-auto">
-          {String(err?.message || err)}
-        </pre>
-        <p className="mt-2 text-sm">
-          Check env vars and enable Anonymous Sign-in in Firebase Auth.
-        </p>
+      <div className="gm-root">
+        <style>{baseCss}</style>
+        <div className="gm-container" style={{ padding: 24 }}>
+          <h1 className="gm-h2">⚠️ Firebase error</h1>
+          <pre style={{ padding: 12, background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 10, overflow: "auto" }}>
+            {String(err?.message || err)}
+          </pre>
+          <p className="gm-subtle" style={{ marginTop: 8 }}>
+            Check env vars and enable Anonymous Sign-in in Firebase Auth.
+          </p>
+        </div>
       </div>
     );
   }
 
-  // UI
+  // ---------- UI ----------
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900">
-      {!embed && (
-        <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-            <h1 className="text-xl font-bold">Scouts BSA Grubmaster Planner</h1>
+    <div className="gm-root">
+      <style>{baseCss}</style>
 
-            <div className="flex items-center gap-2 text-sm">
-              <div className="hidden md:flex items-center gap-2 px-2 py-1 rounded border bg-white">
-                <span>Troop ID:</span>
+      {!embed && (
+        <header className="gm-header">
+          <div className="gm-container">
+            <div className="gm-row">
+              <h1 style={{ fontSize: "1.1rem", fontWeight: 700 }}>Scouts BSA Grubmaster Planner</h1>
+              <div className="gm-row">
+                <div className="gm-row" style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "4px 8px", background: "#fff" }}>
+                  <span className="gm-subtle">Troop ID:</span>
+                  <input
+                    className="gm-input"
+                    style={{ width: 110 }}
+                    placeholder="e.g. 194"
+                    value={troopId}
+                    onChange={(e) => setTroopId(e.target.value.trim())}
+                  />
+                </div>
+                <span className="gm-btn">{authed ? "Connected (anonymous)" : "Connecting…"}</span>
+                <button onClick={handlePrint} className="gm-btn gm-btn-primary">Export PDF</button>
+                <button onClick={handleExportJSON} className="gm-btn">Export JSON</button>
+                <button onClick={handleImportJSONClick} className="gm-btn">Import JSON</button>
                 <input
-                  className="w-28 border rounded px-2 py-1"
-                  placeholder="e.g. 194"
-                  value={troopId}
-                  onChange={(e) => setTroopId(e.target.value.trim())}
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={(e) => handleImportJSON(e.target.files?.[0] || null)}
                 />
               </div>
-
-              <span className="px-2 py-1 rounded border bg-white">
-                {authed ? "Connected (anonymous)" : "Connecting…"}
-              </span>
-
-              <button
-                onClick={handlePrint}
-                className="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800"
-              >
-                Export PDF
-              </button>
-              <button
-                onClick={handleExportJSON}
-                className="px-3 py-1.5 rounded-lg border"
-              >
-                Export JSON
-              </button>
-              <button
-                onClick={handleImportJSONClick}
-                className="px-3 py-1.5 rounded-lg border"
-              >
-                Import JSON
-              </button>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(e) => handleImportJSON(e.target.files?.[0] || null)}
-              />
             </div>
-          </div>
 
-          <div className="max-w-6xl mx-auto px-4 pb-2 text-xs text-slate-600">
-            <span className="mr-2">Sync:</span>
-            <span
-              className={
-                syncInfo.status === "online"
-                  ? "text-emerald-700"
-                  : syncInfo.status === "local-only"
-                  ? "text-amber-700"
-                  : "text-slate-500"
-              }
-            >
-              {syncInfo.status}{" "}
-              {syncInfo.last
-                ? `• ${new Date(syncInfo.last).toLocaleTimeString()}`
-                : ""}
-            </span>
-            {!troopId && (
-              <span className="ml-3 text-amber-700">
-                Enter a Troop ID to share recipes across your troop.
+            <div className="gm-subtle" style={{ padding: "4px 0 8px" }}>
+              <span>Sync: </span>
+              <span style={{ color: syncInfo.status === "online" ? "#047857" : syncInfo.status === "local-only" ? "#b45309" : "#475569" }}>
+                {syncInfo.status} {syncInfo.last ? `• ${new Date(syncInfo.last).toLocaleTimeString()}` : ""}
               </span>
-            )}
-            {importBusy && <span className="ml-3">Importing…</span>}
-            {importMsg && <span className="ml-3">{importMsg}</span>}
+              {!troopId && <span style={{ marginLeft: 8, color: "#b45309" }}>Enter a Troop ID to share recipes across your troop.</span>}
+              {importBusy && <span style={{ marginLeft: 8 }}>Importing…</span>}
+              {importMsg && <span style={{ marginLeft: 8 }}>{importMsg}</span>}
+            </div>
           </div>
         </header>
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-6 grid md:grid-cols-3 gap-6">
-        {/* LEFT: Trip Setup + Add/Edit Recipe */}
-        <section className="md:col-span-1 space-y-6">
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Trip Setup</h2>
+      <main className="gm-container gm-grid">
+        {/* LEFT */}
+        <section className="gm-stack">
+          <div className="gm-card">
+            <h2 className="gm-h2">Trip Setup</h2>
 
-            <label className="block text-sm mb-1">Number of Scouts</label>
+            <label className="gm-label">Number of Scouts</label>
             <input
               type="number"
               min={1}
               value={scouts}
               onChange={(e) => setScouts(Math.max(1, Number(e.target.value) || 1))}
-              className="w-full border rounded-lg px-3 py-2 mb-3"
+              className="gm-input"
             />
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="gm-grid-3" style={{ marginTop: 12 }}>
               {["breakfast", "lunch", "dinner"].map((mt) => (
                 <div key={mt}>
-                  <label className="block text-sm capitalize">{mt}</label>
+                  <label className="gm-label" style={{ textTransform: "capitalize" }}>{mt}</label>
                   <input
                     type="number"
                     min={0}
@@ -966,69 +942,67 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
                         [mt]: Math.max(0, Number(e.target.value) || 0),
                       }))
                     }
-                    className="w-full border rounded-lg px-3 py-2"
+                    className="gm-input"
                   />
                 </div>
               ))}
             </div>
 
-            <label className="block text-sm mt-3">Camp Type</label>
+            <label className="gm-label" style={{ marginTop: 12 }}>Camp Type</label>
             <select
               value={campType}
               onChange={(e) => setCampType(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="gm-select"
             >
               {[
                 { key: "backpacking", label: "Backpacking" },
                 { key: "car", label: "Car camping" },
                 { key: "canoe", label: "Canoe/float" },
               ].map((ct) => (
-                <option key={ct.key} value={ct.key}>
-                  {ct.label}
-                </option>
+                <option key={ct.key} value={ct.key}>{ct.label}</option>
               ))}
             </select>
 
-            <div className="mt-3">
-              <div className="text-sm font-medium mb-1">Dutch oven</div>
-              <label className="inline-flex items-center gap-2 mr-4">
+            <div style={{ marginTop: 12 }}>
+              <div className="gm-label gm-bold">Dutch oven</div>
+              <label style={{ marginRight: 12 }}>
                 <input
                   type="radio"
                   name="dutch"
                   checked={!includeDutchOven}
                   onChange={() => setIncludeDutchOven(false)}
-                />
+                />{" "}
                 No
               </label>
-              <label className="inline-flex items-center gap-2">
+              <label>
                 <input
                   type="radio"
                   name="dutch"
                   checked={includeDutchOven}
                   onChange={() => setIncludeDutchOven(true)}
-                />
+                />{" "}
                 Yes (include Dutch oven recipes)
               </label>
               {campType === "backpacking" && includeDutchOven && (
-                <div className="text-xs text-amber-700 mt-1">
+                <div className="gm-subtle" style={{ marginTop: 4 }}>
                   Note: Dutch oven may be impractical for backpacking trips.
                 </div>
               )}
             </div>
 
-            <div className="mt-3">
-              <div className="text-sm font-medium mb-1">Dietary Restrictions</div>
-              <div className="grid grid-cols-1 gap-2">
+            <div style={{ marginTop: 12 }}>
+              <div className="gm-label gm-bold">Dietary Restrictions</div>
+              <div className="gm-stack">
                 {DIETS.map((d) => (
-                  <label key={d.key} className="inline-flex items-center gap-2">
+                  <label key={d.key}>
                     <input
                       type="checkbox"
                       checked={!!diet[d.key]}
                       onChange={(e) =>
                         setDiet((prev) => ({ ...prev, [d.key]: e.target.checked }))
                       }
-                    />
-                    <span>{d.label}</span>
+                    />{" "}
+                    {d.label}
                   </label>
                 ))}
               </div>
@@ -1048,11 +1022,10 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
             <RecipeForm onCancel={() => {}} onSave={addNew} dietsList={DIETS} />
           )}
 
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Roster (shared)</h2>
+          <div className="gm-card">
+            <h2 className="gm-h2">Scouts (shared)</h2>
             <textarea
-              className="w-full border rounded-lg px-3 py-2"
-              rows={4}
+              className="gm-textarea"
               value={(names || []).join("\n")}
               onChange={(e) =>
                 setNames(
@@ -1063,70 +1036,57 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
                 )
               }
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="gm-subtle" style={{ marginTop: 6 }}>
               One name per line. Saved troop-wide when Troop ID is set.
             </p>
           </div>
         </section>
 
-        {/* RIGHT: Day-grouped Menu + Library + Shopping + Duty */}
-        <section className="md:col-span-2 space-y-6">
+        {/* RIGHT */}
+        <section className="gm-stack">
           {/* Menu (by day) */}
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Menu (grouped by day)</h2>
-            {dayCount === 0 && (
-              <div className="text-slate-500">
-                Set meal counts on the left to create days.
-              </div>
-            )}
+          <div className="gm-card">
+            <h2 className="gm-h2">Menu (grouped by day)</h2>
+            {dayCount === 0 && <div className="gm-subtle">Set meal counts on the left to create days.</div>}
 
-            <div className="space-y-6">
+            <div className="gm-stack">
               {menuByDay.map((day, dIdx) => (
-                <div key={dIdx} className="border rounded-xl p-3">
-                  <div className="text-sm font-semibold mb-2">Day {dIdx + 1}</div>
+                <div key={dIdx} className="gm-box">
+                  <div className="gm-bold" style={{ marginBottom: 6 }}>Day {dIdx + 1}</div>
 
                   {["breakfast", "lunch", "dinner"].map(
                     (mt) =>
                       day[mt].length > 0 && (
-                        <div key={mt} className="mb-3">
-                          <div className="uppercase tracking-wide text-slate-500 text-xs mb-1">
-                            {mt}
-                          </div>
-                          <div className="grid md:grid-cols-2 gap-2">
+                        <div key={mt} style={{ marginBottom: 10 }}>
+                          <div className="gm-meal">{mt}</div>
+                          <div className="gm-grid-2">
                             {day[mt].map((slot) => {
                               const options = (filteredRecipes || []).filter(
                                 (r) =>
                                   r.mealType === slot.mealType &&
                                   (r.course || "main") === (slot.course || "main")
                               );
-                              const slotIndex = (menu || []).findIndex(
-                                (s) => s.id === slot.id
-                              );
-                              const chosen = (recipes || []).find(
-                                (r) => r.id === slot.recipeId
-                              );
+                              const slotIndex = (menu || []).findIndex((s) => s.id === slot.id);
+                              const chosen = (recipes || []).find((r) => r.id === slot.recipeId);
                               return (
-                                <div key={slot.id} className="border rounded-lg p-2">
-                                  <div className="text-xs text-slate-600 mb-1 capitalize">
+                                <div key={slot.id} className="gm-box">
+                                  <div className="gm-subtle" style={{ marginBottom: 6, textTransform: "capitalize" }}>
                                     {slot.course}
                                   </div>
                                   <select
-                                    className="w-full border rounded-lg px-3 py-2"
+                                    className="gm-select"
                                     value={slot.recipeId}
-                                    onChange={(e) =>
-                                      setMenuRecipe(slotIndex, e.target.value)
-                                    }
+                                    onChange={(e) => setMenuRecipe(slotIndex, e.target.value)}
                                   >
                                     <option value="">— Pick a recipe —</option>
                                     {options.map((r) => (
                                       <option key={r.id} value={r.id}>
-                                        {r.name}
-                                        {r.tags?.dutchOven ? " (DO)" : ""}
+                                        {r.name}{r.tags?.dutchOven ? " (DO)" : ""}
                                       </option>
                                     ))}
                                   </select>
                                   {chosen && (
-                                    <div className="mt-1 text-xs text-slate-600">
+                                    <div className="gm-subtle" style={{ marginTop: 6 }}>
                                       Serves {chosen.serves}. Scales to {scouts} scouts.
                                     </div>
                                   )}
@@ -1142,63 +1102,48 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
             </div>
           </div>
 
-          {/* Library (with edit/delete/fav) */}
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">
-              Recipes Library {(filteredRecipes || []).length
-                ? `(${filteredRecipes.length} shown)`
-                : ""}
+          {/* Library */}
+          <div className="gm-card">
+            <h2 className="gm-h2">
+              Recipes Library {(filteredRecipes || []).length ? `(${filteredRecipes.length} shown)` : ""}
             </h2>
-            <div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
+            <div className="gm-grid-2" style={{ maxHeight: 380, overflowY: "auto", paddingRight: 6 }}>
               {(filteredRecipes || []).map((r) => (
-                <div key={r.id} className="border rounded-xl p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold">{r.name}</div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="text-xs px-2 py-0.5 rounded-full border"
-                        onClick={() => toggleFavorite(r.id)}
-                      >
+                <div key={r.id} className="gm-box">
+                  <div className="gm-row">
+                    <div className="gm-bold">{r.name}</div>
+                    <div className="gm-row">
+                      <button className="gm-btn" onClick={() => toggleFavorite(r.id)}>
                         {favorites.includes(r.id) ? "★ Fav" : "☆ Fav"}
                       </button>
-                      <button
-                        className="text-xs px-2 py-0.5 rounded-full border"
-                        onClick={() => startEdit(r.id)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="text-xs px-2 py-0.5 rounded-full border text-red-700"
-                        onClick={() => deleteRecipe(r.id)}
-                      >
-                        Delete
-                      </button>
+                      <button className="gm-btn" onClick={() => startEdit(r.id)}>Edit</button>
+                      <button className="gm-btn" style={{ color: "#b91c1c", borderColor: "#ef4444" }} onClick={() => deleteRecipe(r.id)}>Delete</button>
                     </div>
                   </div>
 
-                  <div className="text-xs uppercase tracking-wide text-slate-500">
+                  <div className="gm-subtle" style={{ textTransform: "uppercase" }}>
                     {r.mealType} • {r.course}
                   </div>
-                  <div className="mt-1 flex gap-2 flex-wrap">
+                  <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {r.tags?.dutchOven && <Pill>DO</Pill>}
                     {r.tags?.backpacking && <Pill>Backpacking</Pill>}
                     {r.tags?.car && <Pill>Car</Pill>}
                     {r.tags?.canoe && <Pill>Canoe</Pill>}
                   </div>
 
-                  <details className="text-sm mt-2">
-                    <summary className="cursor-pointer">Details</summary>
-                    <div className="mt-1">
-                      <div className="font-medium">Ingredients (per person)</div>
-                      <ul className="list-disc ml-5">
+                  <details style={{ marginTop: 8 }}>
+                    <summary className="gm-bold" style={{ cursor: "pointer" }}>Details</summary>
+                    <div style={{ marginTop: 6 }}>
+                      <div className="gm-bold">Ingredients (per person)</div>
+                      <ul style={{ marginLeft: 18 }}>
                         {(r.ingredients || []).map((ing, i) => (
                           <li key={i}>
                             {ing.item}: {ing.qtyPerPerson} {ing.unit}
                           </li>
                         ))}
                       </ul>
-                      <div className="font-medium mt-1">Steps</div>
-                      <ol className="list-decimal ml-5">
+                      <div className="gm-bold" style={{ marginTop: 6 }}>Steps</div>
+                      <ol style={{ marginLeft: 18 }}>
                         {(r.steps || []).map((s, i) => (
                           <li key={i}>{s}</li>
                         ))}
@@ -1211,14 +1156,14 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           </div>
 
           {/* Shopping List */}
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Shopping List</h2>
-            <div className="grid md:grid-cols-2 gap-3">
+          <div className="gm-card">
+            <h2 className="gm-h2">Shopping List</h2>
+            <div className="gm-grid-2">
               {shopping.map((it, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input type="checkbox" className="w-4 h-4" />
+                <div key={i} className="gm-row">
+                  <input type="checkbox" />
                   <span>{it.item}</span>
-                  <span className="ml-auto text-sm text-slate-600">
+                  <span style={{ marginLeft: "auto" }} className="gm-subtle">
                     {Number(it.qty.toFixed(2))} {it.unit}
                   </span>
                 </div>
@@ -1227,8 +1172,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           </div>
 
           {/* Duty Roster */}
-          <div className="p-4 bg-white rounded-2xl shadow">
-            <h2 className="text-lg font-semibold mb-3">Duty Roster</h2>
+          <div className="gm-card">
+            <h2 className="gm-h2">Duty Roster</h2>
             <RosterTable
               names={names}
               menu={menu}
@@ -1240,15 +1185,12 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       </main>
 
       {/* Print content */}
-      <div className="hidden" ref={printRef}>
+      <div style={{ display: "none" }} ref={printRef}>
         <h1>Troop Duty Roster + Meal Plan</h1>
         <div className="muted">
-          Scouts: {scouts} · Camp:{" "}
-          {["backpacking", "car", "canoe"].includes(campType) ? campType : "car"} ·
+          Scouts: {scouts} · Camp: {["backpacking", "car", "canoe"].includes(campType) ? campType : "car"} ·
           Dutch oven: {includeDutchOven ? "Yes" : "No"} · Diet:{" "}
-          {Object.keys(obj(diet))
-            .filter((k) => diet[k])
-            .join(", ") || "None"}
+          {Object.keys(obj(diet)).filter((k) => diet[k]).join(", ") || "None"}
         </div>
 
         {menuByDay.map((day, dIdx) => (
@@ -1256,11 +1198,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
             <h2>Day {dIdx + 1} Menu</h2>
             <table>
               <thead>
-                <tr>
-                  <th>Meal</th>
-                  <th>Course</th>
-                  <th>Recipe</th>
-                </tr>
+                <tr><th>Meal</th><th>Course</th><th>Recipe</th></tr>
               </thead>
               <tbody>
                 {["breakfast", "lunch", "dinner"].flatMap((mt) =>
@@ -1268,8 +1206,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
                     const r = (recipes || []).find((rr) => rr.id === m.recipeId);
                     return (
                       <tr key={m.id}>
-                        <td className="cap">{m.mealType}</td>
-                        <td className="cap">{m.course}</td>
+                        <td style={{ textTransform: "capitalize" }}>{m.mealType}</td>
+                        <td style={{ textTransform: "capitalize" }}>{m.course}</td>
                         <td>{r?.name || ""}</td>
                       </tr>
                     );
@@ -1292,11 +1230,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         <h2>Shopping List</h2>
         <table>
           <thead>
-            <tr>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Unit</th>
-            </tr>
+            <tr><th>Item</th><th>Qty</th><th>Unit</th></tr>
           </thead>
           <tbody>
             {shopping.map((it, i) => (
@@ -1310,15 +1244,15 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         </table>
       </div>
 
-      <footer className="max-w-6xl mx-auto px-4 pb-10 text-center text-xs text-slate-500">
-        Local fallback; cloud sync when Troop ID is set • Print via Export button
+      <footer className="gm-container" style={{ paddingBottom: 24, textAlign: "center" }}>
+        <span className="gm-subtle">Local fallback; cloud sync when Troop ID is set • Print via Export button</span>
       </footer>
     </div>
   );
 }
 
 // ---------------------------
-// Duty roster helper component
+// Duty roster helper
 // ---------------------------
 function RosterTable({ names = [], menu = [], recipes = [], printMode = false, dayCount = 0 }) {
   const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
@@ -1349,7 +1283,8 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
   const duty = mains.map((m, i) => {
     const assignment = {};
     roles.forEach((role, rIdx) => {
-      const who = (names || [])[((i + rIdx) % ((names || []).length || 1))] || `Patrol ${rIdx + 1}`;
+      const nlen = (names || []).length || 10;
+      const who = (names || [])[((i + rIdx) % nlen)] || `Scout ${((i + rIdx) % nlen) + 1}`;
       assignment[role] = who;
     });
     return { ...m, assignment };
@@ -1358,79 +1293,61 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
   if (printMode) {
     return (
       <div>
-        {[...new Set(duty.map((d) => d.dayIndex))]
-          .sort((a, b) => a - b)
-          .map((d) => (
-            <div key={d}>
-              <h3>Day {d + 1}</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Meal</th>
-                    <th>Main</th>
-                    {roles.map((r) => (
-                      <th key={r}>{r}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {duty
-                    .filter((x) => x.dayIndex === d)
-                    .map((x) => {
-                      const r = (recipes || []).find((rr) => rr.id === x.recipeId);
-                      return (
-                        <tr key={x.id}>
-                          <td className="cap">{x.mealType}</td>
-                          <td>{r?.name || "—"}</td>
-                          {roles.map((role) => (
-                            <td key={role}>{x.assignment[role]}</td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          ))}
+        {[...new Set(duty.map((d) => d.dayIndex))].sort((a, b) => a - b).map((d) => (
+          <div key={d}>
+            <h3>Day {d + 1}</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Meal</th>
+                  <th>Main</th>
+                  {roles.map((r) => <th key={r}>{r}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {duty.filter((x) => x.dayIndex === d).map((x) => {
+                  const r = (recipes || []).find((rr) => rr.id === x.recipeId);
+                  return (
+                    <tr key={x.id}>
+                      <td style={{ textTransform: "capitalize" }}>{x.mealType}</td>
+                      <td>{r?.name || "—"}</td>
+                      {roles.map((role) => <td key={role}>{x.assignment[role]}</td>)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="gm-stack">
       {Array.from({ length: dayCount }, (_, d) => d).map((d) => (
-        <div key={d} className="border rounded-xl">
-          <div className="px-2 py-1 text-sm font-semibold">Day {d + 1}</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <div key={d} className="gm-box">
+          <div className="gm-bold" style={{ padding: "4px 6px" }}>Day {d + 1}</div>
+          <div style={{ overflowX: "auto" }}>
+            <table>
               <thead>
                 <tr>
-                  <th className="border px-2 py-1 text-left">Meal</th>
-                  <th className="border px-2 py-1 text-left">Main</th>
-                  {roles.map((r) => (
-                    <th key={r} className="border px-2 py-1 text-left">
-                      {r}
-                    </th>
-                  ))}
+                  <th>Meal</th>
+                  <th>Main</th>
+                  {roles.map((r) => <th key={r}>{r}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {duty
-                  .filter((x) => x.dayIndex === d)
-                  .map((x) => {
-                    const r = (recipes || []).find((rr) => rr.id === x.recipeId);
-                    return (
-                      <tr key={x.id}>
-                        <td className="border px-2 py-1 cap">{x.mealType}</td>
-                        <td className="border px-2 py-1">{r?.name || "—"}</td>
-                        {roles.map((role) => (
-                          <td key={role} className="border px-2 py-1">
-                            {x.assignment[role]}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
+                {duty.filter((x) => x.dayIndex === d).map((x) => {
+                  const r = (recipes || []).find((rr) => rr.id === x.recipeId);
+                  return (
+                    <tr key={x.id}>
+                      <td style={{ textTransform: "capitalize" }}>{x.mealType}</td>
+                      <td>{r?.name || "—"}</td>
+                      {roles.map((role) => <td key={role}>{x.assignment[role]}</td>)}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
