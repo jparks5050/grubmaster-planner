@@ -28,7 +28,27 @@ const ensureTen = (list) =>
   Array.from({ length: 10 }, (_, i) =>
     (list && typeof list[i] === "string" && list[i].trim()) ? list[i].trim() : `Scout ${i + 1}`
   );
+const gmSave = (k, v) => {
+  const s = JSON.stringify(v);
+  try { localStorage.setItem(k, s); } catch {}
+  try { sessionStorage.setItem(k, s); } catch {}
+};
 
+const gmLoad = (k, d) => {
+  // pick the most complete copy among local & session
+  let best = null, score = -1;
+  for (const store of [localStorage, sessionStorage]) {
+    try {
+      const raw = store.getItem(k);
+      if (raw != null) {
+        const v = JSON.parse(raw);
+        const sc = Array.isArray(v) ? v.length : (v ? 1 : -1);
+        if (v != null && sc > score) { best = v; score = sc; }
+      }
+    } catch {}
+  }
+  return best != null ? best : d;
+};
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
