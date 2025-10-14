@@ -541,11 +541,17 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     }
     const subs = [];
     subs.push(
-      onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
-        const a = snap.docs.map((d) => normalizeRecipe({ id: d.id, ...d.data() }));
-        if (a.length) setRecipes(a);
-        setSyncInfo({ status: "online", last: new Date().toISOString() });
-      })
+       onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
+   const incoming = snap.docs.map((d) => normalizeRecipe({ id: d.id, ...d.data() }));
+   if (incoming.length) {
+     setRecipes((prev) => {
+       const map = new Map((Array.isArray(prev) ? prev : []).map(r => [r.id, r]));
+       incoming.forEach(r => map.set(r.id, r));     // cloud wins per-id, but keep locals too
+       return Array.from(map.values());
+     });
+   }
+   setSyncInfo({ status: "online", last: new Date().toISOString() });
+ })
     );
     if (paths.settingsDoc) {
       subs.push(
