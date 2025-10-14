@@ -24,6 +24,7 @@ import {
 const arr = (x) => (Array.isArray(x) ? x : []);
 const obj = (x) => (x && typeof x === "object" ? x : {});
 const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
+const A = (x) => (Array.isArray(x) ? x : []);
 
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
