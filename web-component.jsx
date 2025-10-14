@@ -48,9 +48,9 @@ if (!customElements.get(TAG)) {
 
     _applyStyles() {
       const baseReset = `
-        :host{ all: initial; display:block; }
-        *,*::before,*::after{ box-sizing:border-box; }
-      `;
+  :host{ all:initial; display:block; width:100%; }
+  *,*::before,*::after{ box-sizing:border-box; }
+`;
 
       const fullCss = `${baseReset}\n${appCss || ""}`;
 
@@ -95,13 +95,8 @@ if (!customElements.get(TAG)) {
       try {
         // If StrictMode causes double-effects with Wix, you can remove it.
         this._root.render(
-          <React.StrictMode>
-            <App
-              initialTroopId={String(props.initialTroopId || "")}
-              embed={!!props.embed}
-            />
-          </React.StrictMode>
-        );
+  <App initialTroopId={String(props.initialTroopId || "")} embed={!!props.embed} />
+);
       } catch (err) {
         const msg = (err && err.message) || String(err);
         this._container.innerHTML = `
