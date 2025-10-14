@@ -1,5 +1,4 @@
 // src/App.jsx — Day-grouped Menu + Duty Roster + Wix-safe CSS (no Tailwind needed)
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // --- Firebase (anonymous) ---
@@ -185,9 +184,7 @@ const SEED = [
 ];
 
 // ---------- small presentational ----------
-const Pill = ({ children }) => (
-  <span className="gm-pill">{children}</span>
-);
+const Pill = ({ children }) => <span className="gm-pill">{children}</span>;
 
 // ---------- Recipe Form ----------
 function RecipeForm({ initial, onCancel, onSave, dietsList }) {
@@ -527,7 +524,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
-  // Cloud subscriptions
+  // Cloud subscriptions (if Troop ID is set)
   useEffect(() => {
     if (!authed || !troopId || !paths.recipesCol) {
       setSyncInfo((s) => ({ ...s, status: "local-only" }));
@@ -613,7 +610,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return list;
   }, [dayCount, meals.breakfast, meals.lunch, meals.dinner]);
 
-  // Auto-generate (preserve edits) — depend on full arrays, not just lengths
+  // Auto-generate (preserve edits)
   useEffect(() => {
     const favs = new Set(favorites || []);
     const current = Array.isArray(menu) ? menu : [];
@@ -643,7 +640,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       return { id: uid(), dayIndex: slot.dayIndex, mealType: slot.mealType, course: slot.course, recipeId: pick?.id || "" };
     });
     setMenu(next);
-  }, [filteredRecipes, neededSlots, favorites]); // <— key fix
+  }, [filteredRecipes, neededSlots, favorites]);
 
   const setMenuRecipe = (slotIndex, recipeId) => {
     setMenu((m) => {
@@ -828,7 +825,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           )
         );
       }
-      setMenu([]); // force auto-regenerate
+      setMenu([]); // force auto-regenerate after import
       setImportMsg(`Imported ${incoming.length} recipe(s).`);
     } catch (e) {
       setImportMsg(`Import failed: ${e?.message || e}`);
