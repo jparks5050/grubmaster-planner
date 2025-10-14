@@ -851,7 +851,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         const keys = [];
         for (let i = 0; i < store.length; i++) {
           const k = store.key(i);
-          if (k && k.startsWith("gm_")) keys.push(k);
+          if (k && k.startsWith("gm_") && k !== "gm_recipes") keys.push(k); // keep recipes
         }
         keys.forEach((k) => store.removeItem(k));
       } catch {}
@@ -859,7 +859,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     clearMatching(localStorage);
     clearMatching(sessionStorage);
 
-    setTroopId(""); // keep local truly clean
+    setTroopId("");
     setScouts(10);
     setMeals({ breakfast: 2, lunch: 2, dinner: 2 });
     setCampType("car");
@@ -868,7 +868,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     setFavorites([]);
     setMenu([]);
     setNames(ensureTen());
-    setRecipes(SEED);
+    // DO NOT reset recipes here; they stay persisted
     setImportMsg("");
   };
 
