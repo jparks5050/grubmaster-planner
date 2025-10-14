@@ -4,24 +4,21 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-   define: {
-   // Prevent "process is not defined" in the browser for any deps that check process.env
-   "process.env": {}
- },
+  define: {
+    // Prevent "process is not defined" in browser-only builds
+    "process.env": {},
+  },
   build: {
     lib: {
-      entry: "web-component.jsx",     // <— the wrapper we just created
+      entry: "web-component.jsx",
       name: "GrubmasterWC",
-      formats: ["iife"],             // Browser-friendly single <script> file
+      formats: ["iife"], // one browser-ready <script> file
       fileName: () => "grubmaster-app.js",
     },
     rollupOptions: {
-      // We want one self-contained file: React should be bundled
+      // Bundle everything (including React) so Wix only needs this one file
       external: [],
     },
-    // Optional but helpful when hosting under a subpath:
-    // assetsInlineLimit: 0,
-    cssCodeSplit: false,// keep styles in the lib bundle (we inline them anyway)
+    cssCodeSplit: false, // keep CSS with the JS (we inject into the shadow)
   },
 });
-
