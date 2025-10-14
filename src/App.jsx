@@ -1,4 +1,4 @@
-// src/App.jsx — Day-grouped Menu + Duty Roster + Wix-safe CSS (no Tailwind needed)
+// App (9).jsx — Day-grouped Menu + Duty Roster + Fixed 10-Scout Roster + Robust localStorage
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // --- Firebase (anonymous) ---
@@ -22,6 +22,12 @@ const arr = (x) => (Array.isArray(x) ? x : []);
 const obj = (x) => (x && typeof x === "object" ? x : {});
 const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+// ---------- helpers ----------
+const ensureTen = (list) =>
+  Array.from({ length: 10 }, (_, i) =>
+    (list && typeof list[i] === "string" && list[i].trim()) ? list[i].trim() : `Scout ${i + 1}`
+  );
 
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
@@ -231,7 +237,7 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
   };
 
   return (
-    <div className="gm-card">
+    <div className="gm-card gm-panel">
       <h2 className="gm-h2">{initial ? "Edit Recipe" : "Add Recipe"}</h2>
       <div className="gm-stack">
         <input
@@ -416,7 +422,9 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   .gm-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
   .gm-grid{display:grid;grid-template-columns:1fr;gap:24px}
   @media (min-width:900px){.gm-grid{grid-template-columns:1fr 2fr}}
-  .gm-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:16px}
+  .gm-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:16px;min-height:180px}
+  .gm-panel{display:flex;flex-direction:column}
+  .gm-scroll{max-height:420px;overflow:auto}
   .gm-h2{font-size:1.1rem;font-weight:600;margin:0 0 10px}
   .gm-label{font-size:.9rem;color:#334155;margin-bottom:4px;display:block}
   .gm-bold{font-weight:600}
@@ -481,7 +489,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return { recipesCol, settingsDoc, userDoc };
   }, [db, troopId, user]);
 
-  // Trip setup
+  // Trip setup (trimmed whitespace by keeping spacing tight)
   const [scouts, setScouts] = useState(loadLS("gm_scouts", 10));
   useEffect(() => saveLS("gm_scouts", scouts), [scouts]);
 
@@ -512,15 +520,12 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   });
   const [favorites, setFavorites] = useState(loadLS("gm_favorites", []));
   const [names, setNames] = useState(
-    loadLS(
-      "gm_names",
-      Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)
-    )
+    ensureTen(loadLS("gm_names", Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)))
   );
 
   useEffect(() => saveLS("gm_recipes", recipes), [recipes]);
   useEffect(() => saveLS("gm_favorites", favorites), [favorites]);
-  useEffect(() => saveLS("gm_names", names), [names]);
+  useEffect(() => saveLS("gm_names", ensureTen(names)), [names]);
 
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
@@ -542,7 +547,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       subs.push(
         onSnapshot(paths.settingsDoc, (d) => {
           const data = d.data();
-          if (Array.isArray(data?.names)) setNames(data.names);
+          if (Array.isArray(data?.names)) setNames(ensureTen(data.names));
         })
       );
     }
@@ -557,11 +562,11 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     return () => subs.forEach((u) => u && u());
   }, [authed, troopId, paths.recipesCol, paths.settingsDoc, paths.userDoc]);
 
-  // Save names to cloud when changed
+  // Save names to cloud when changed (no lock-out; always 10)
   useEffect(() => {
     const save = async () => {
       if (!authed || !troopId || !paths.settingsDoc) return;
-      await setDoc(paths.settingsDoc, { names }, { merge: true });
+      await setDoc(paths.settingsDoc, { names: ensureTen(names) }, { merge: true });
       setSyncInfo({ status: "online", last: new Date().toISOString() });
     };
     save();
@@ -809,11 +814,14 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       if (!list)
         throw new Error("Invalid file: expected { recipes: [...] } or an array.");
       const incoming = list.map(normalizeRecipe);
-      setRecipes((prev) => {
+      // Merge into current, persist immediately
+      const merged = (prev => {
         const map = new Map((prev || []).map((r) => [r.id, r]));
         incoming.forEach((r) => map.set(r.id, r));
         return Array.from(map.values());
-      });
+      })(recipes);
+      setRecipes(merged);
+      saveLS("gm_recipes", merged); // persist right away
       if (authed && troopId && paths.recipesCol) {
         await Promise.all(
           incoming.map((r) =>
@@ -833,6 +841,35 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
       setImportBusy(false);
       if (importInputRef.current) importInputRef.current.value = "";
     }
+  };
+
+  // Reset local data cleanly
+  const resetLocal = () => {
+    if (!confirm("Reset local data (recipes, names, menu, settings)? This won't delete cloud data.")) return;
+    const clearMatching = (store) => {
+      try {
+        const keys = [];
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i);
+          if (k && k.startsWith("gm_")) keys.push(k);
+        }
+        keys.forEach((k) => store.removeItem(k));
+      } catch {}
+    };
+    clearMatching(localStorage);
+    clearMatching(sessionStorage);
+
+    setTroopId(""); // keep local truly clean
+    setScouts(10);
+    setMeals({ breakfast: 2, lunch: 2, dinner: 2 });
+    setCampType("car");
+    setIncludeDutchOven(false);
+    setDiet({});
+    setFavorites([]);
+    setMenu([]);
+    setNames(ensureTen());
+    setRecipes(SEED);
+    setImportMsg("");
   };
 
   if (phase === "boot") {
@@ -887,6 +924,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
                 <button onClick={handlePrint} className="gm-btn gm-btn-primary">Export PDF</button>
                 <button onClick={handleExportJSON} className="gm-btn">Export JSON</button>
                 <button onClick={handleImportJSONClick} className="gm-btn">Import JSON</button>
+                <button onClick={resetLocal} className="gm-btn" title="Clears all gm_* local data">Reset (local)</button>
                 <input
                   ref={importInputRef}
                   type="file"
@@ -1019,22 +1057,27 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
             <RecipeForm onCancel={() => {}} onSave={addNew} dietsList={DIETS} />
           )}
 
+          {/* Scouts 1–10 (always 10 editable inputs, no lock-out) */}
           <div className="gm-card">
-            <h2 className="gm-h2">Scouts (shared)</h2>
-            <textarea
-              className="gm-textarea"
-              value={(names || []).join("\n")}
-              onChange={(e) =>
-                setNames(
-                  e.target.value
-                    .split(/\n+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                )
-              }
-            />
+            <h2 className="gm-h2">Scouts 1–10</h2>
+            <div className="gm-grid-2">
+              {ensureTen(names).map((n, i) => (
+                <div key={i}>
+                  <label className="gm-label">Scout {i + 1}</label>
+                  <input
+                    className="gm-input"
+                    value={n}
+                    onChange={(e) => {
+                      const next = ensureTen(names);
+                      next[i] = e.target.value;
+                      setNames(ensureTen(next));
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
             <p className="gm-subtle" style={{ marginTop: 6 }}>
-              One name per line. Saved troop-wide when Troop ID is set.
+              Saved locally and troop-wide when Troop ID is set.
             </p>
           </div>
         </section>
@@ -1042,11 +1085,11 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
         {/* RIGHT */}
         <section className="gm-stack">
           {/* Menu (by day) */}
-          <div className="gm-card">
+          <div className="gm-card gm-panel">
             <h2 className="gm-h2">Menu (grouped by day)</h2>
             {dayCount === 0 && <div className="gm-subtle">Set meal counts on the left to create days.</div>}
 
-            <div className="gm-stack">
+            <div className="gm-stack gm-scroll">
               {menuByDay.map((day, dIdx) => (
                 <div key={dIdx} className="gm-box">
                   <div className="gm-bold" style={{ marginBottom: 6 }}>Day {dIdx + 1}</div>
@@ -1100,11 +1143,11 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           </div>
 
           {/* Library */}
-          <div className="gm-card">
+          <div className="gm-card gm-panel">
             <h2 className="gm-h2">
               Recipes Library {(filteredRecipes || []).length ? `(${filteredRecipes.length} shown)` : ""}
             </h2>
-            <div className="gm-grid-2" style={{ maxHeight: 380, overflowY: "auto", paddingRight: 6 }}>
+            <div className="gm-grid-2 gm-scroll" style={{ paddingRight: 6 }}>
               {(filteredRecipes || []).map((r) => (
                 <div key={r.id} className="gm-box">
                   <div className="gm-row">
@@ -1153,9 +1196,9 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           </div>
 
           {/* Shopping List */}
-          <div className="gm-card">
+          <div className="gm-card gm-panel">
             <h2 className="gm-h2">Shopping List</h2>
-            <div className="gm-grid-2">
+            <div className="gm-grid-2 gm-scroll">
               {shopping.map((it, i) => (
                 <div key={i} className="gm-row">
                   <input type="checkbox" />
@@ -1169,14 +1212,16 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
           </div>
 
           {/* Duty Roster */}
-          <div className="gm-card">
+          <div className="gm-card gm-panel">
             <h2 className="gm-h2">Duty Roster</h2>
-            <RosterTable
-              names={names}
-              menu={menu}
-              recipes={recipes}
-              dayCount={dayCount}
-            />
+            <div className="gm-scroll">
+              <RosterTable
+                names={ensureTen(names)}
+                menu={menu}
+                recipes={recipes}
+                dayCount={dayCount}
+              />
+            </div>
           </div>
         </section>
       </main>
@@ -1217,7 +1262,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
         <h2>Duty Roster</h2>
         <RosterTable
-          names={names}
+          names={ensureTen(names)}
           menu={menu}
           recipes={recipes}
           printMode
@@ -1254,7 +1299,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 function RosterTable({ names = [], menu = [], recipes = [], printMode = false, dayCount = 0 }) {
   const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
 
-  const mains = useMemo(() => {
+  const mains = React.useMemo(() => {
     const order = [];
     const byDay = {};
     (menu || []).forEach((s) => {
