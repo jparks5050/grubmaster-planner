@@ -803,28 +803,77 @@ const libraryList = useMemo(() => {
   };
 
   // Print
-  const printRef = useRef(null);
-  const handlePrint = () => {
-    const w = window.open("", "_blank");
-    if (!w) return;
-    const docW = w.document;
-    docW.write(`<!doctype html><html><head><title>Grubmaster Plan</title>
-      <style>
-        body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
-        h1{margin:0 0 8px}
-        h2{margin:24px 0 8px}
-        h3{margin:12px 0 6px}
-        table{border-collapse:collapse;width:100%}
-        th,td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:12px}
-        .muted{color:#555}
-        .cap{text-transform:capitalize}
-      </style></head><body>`);
-    docW.write(printRef.current?.innerHTML || "");
-    docW.write("</body></html>");
-    docW.close();
-    w.focus();
-    w.print();
+  // Print (Wix-safe: hidden iframe, no popups)
+const handlePrint = () => {
+  if (!printRef.current) return;
+
+  // Build a complete minimal HTML doc to print
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Grubmaster Plan</title>
+  <style>
+    /* keep it self-contained so Wix page CSS doesn't interfere */
+    body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
+    h1{margin:0 0 8px}
+    h2{margin:24px 0 8px}
+    h3{margin:12px 0 6px}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #999;padding:6px 8px;text-align:left;font-size:12px}
+    .muted{color:#555}
+    .cap{text-transform:capitalize}
+  </style>
+</head>
+<body>
+${printRef.current.innerHTML || ""}
+</body>
+</html>`;
+
+  // Create a hidden iframe (works in Wix without popups)
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.setAttribute("aria-hidden", "true");
+
+  document.body.appendChild(iframe);
+
+  const w = iframe.contentWindow;
+  const d = w?.document;
+  if (!w || !d) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  d.open();
+  d.write(html);
+  d.close();
+
+  // Give the browser a tick to layout, then print.
+  // Keeping it close to the click ensures user-gesture compatibility.
+  const doPrint = () => {
+    try {
+      w.focus();
+      w.print();
+    } finally {
+      // Clean up after the print dialog is shown
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }
   };
+
+  // Some browsers need a short delay for styles/layout to apply.
+  // requestAnimationFrame twice is a nice cross-browser nudge.
+  w.requestAnimationFrame
+    ? w.requestAnimationFrame(() => w.requestAnimationFrame(doPrint))
+    : setTimeout(doPrint, 0);
+};
+
 
   // Import/Export
   const importInputRef = useRef(null);
