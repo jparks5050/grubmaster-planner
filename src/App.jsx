@@ -1184,7 +1184,7 @@ return list.filter((r) => {
           {/* Library */}
           <div className="gm-card gm-panel">
             <h2 className="gm-h2">
-              {(libraryList || []).length ? `(${libraryList.length} shown)` : ""}
+              Recipes Library {(libraryList || []).length ? `(${libraryList.length} shown)` : ""}
             </h2>
 <div className="gm-row" style={{ marginBottom: 8 }}>
   <input
@@ -1338,7 +1338,6 @@ return list.filter((r) => {
         <span className="gm-subtle">Local fallback; cloud sync when Troop ID is set • Print via Export button</span>
       </footer>
     </div>
-    );
 }
 
 // ---------------------------
@@ -1444,7 +1443,5 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
         </div>
       ))}
     </div>
-  </footer>
-    </div>
-  );         // close the `return (`
-}            // close the component function
+  );
+}
