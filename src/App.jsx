@@ -597,11 +597,23 @@ const [search, setSearch] = useState("");
     save();
   }, [names, authed, troopId, paths.settingsDoc]);
 
-  // Filter recipes by trip constraints
-  const filteredRecipes = useMemo(() => {
-    const list = Array.isArray(recipes) ? recipes : [];
-    const d = obj(diet);
-    
+// 1) Compute filteredRecipes (by trip constraints)
+const filteredRecipes = useMemo(() => {
+  const list = Array.isArray(recipes) ? recipes : [];
+  const d = obj(diet);
+  return list.filter((r) => {
+    const t = obj(r?.tags);
+    const noTagTrue = !t.backpacking && !t.car && !t.canoe && !t.dutchOven; // allow untagged for car
+    if (campType === "backpacking" && !t.backpacking) return false;
+    if (campType === "car" && !(t.car || t.backpacking || t.canoe || noTagTrue)) return false;
+    if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
+    if (!includeDutchOven && t.dutchOven) return false;
+    for (const k of Object.keys(d)) if (d[k] && !r.diet?.[k]) return false;
+    return true;
+  });
+}, [recipes, campType, includeDutchOven, diet]);
+
+// 2) Compute libraryList (search filter) at top level, using filteredRecipes
 const libraryList = useMemo(() => {
   const q = search.trim().toLowerCase();
   const base = filteredRecipes || [];
@@ -615,17 +627,6 @@ const libraryList = useMemo(() => {
     return hit(r.name) || ingHit || stepHit || tagHit || mealHit || hit(r.course);
   });
 }, [filteredRecipes, search]);
-return list.filter((r) => {
-      const t = obj(r?.tags);
-      const noTagTrue = !t.backpacking && !t.car && !t.canoe && !t.dutchOven; // allow untagged for car
-      if (campType === "backpacking" && !t.backpacking) return false;
-      if (campType === "car" && !(t.car || t.backpacking || t.canoe || noTagTrue)) return false;
-      if (campType === "canoe" && !(t.canoe || t.car || t.backpacking)) return false;
-      if (!includeDutchOven && t.dutchOven) return false;
-      for (const k of Object.keys(d)) if (d[k] && !r.diet?.[k]) return false;
-      return true;
-    });
-  }, [recipes, campType, includeDutchOven, diet]);
 
   // Menu (auto + editable) grouped by day
   const COURSES_BASE = ["main", "side", "drink"];
