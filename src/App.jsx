@@ -635,6 +635,7 @@ return list.filter((r) => {
   const dayCount = useMemo(
     () => Math.max(meals.breakfast || 0, meals.lunch || 0, meals.dinner || 0),
     [meals]
+);
 
   const neededSlots = useMemo(() => {
     const list = [];
