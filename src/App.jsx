@@ -1443,4 +1443,4 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
         </div>
       ))}
     </div>
-}
+);
