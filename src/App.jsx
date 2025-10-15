@@ -1,4 +1,4 @@
-// App (12).jsx — Day-grouped Menu + Duty Roster + Fixed 10-Scout Roster + Robust localStorage
+// App (9).jsx — Day-grouped Menu + Duty Roster + Fixed 10-Scout Roster + Robust localStorage
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // --- Firebase (anonymous) ---
@@ -24,10 +24,7 @@ const getMealType = (r) => String(r?.mealType || "dinner").trim().toLowerCase();
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 // ---------- helpers ----------
-const ensureTen = (list) =>
-  Array.from({ length: 10 }, (_, i) =>
-    (list && typeof list[i] === "string" && list[i].trim()) ? list[i].trim() : `Scout ${i + 1}`
-  );
+const ensureTen = (list) => Array.from({ length: 10 }, (_, i) => (Array.isArray(list) ? (list[i] ?? "") : ""));
 
 // ---------- Firebase Config via Vite env ----------
 const firebaseCfg = {
@@ -94,7 +91,7 @@ const normalizeRecipe = (r = {}) => {
 };
 
 // helper: recipe supports given meal
-const hasMeal = (r, meal) => Array.isArray(r?.mealType) ? r.mealType.includes(meal) : String(r?.mealType) === meal;
+function hasMeal(r, meal) { return Array.isArray(r?.mealType) ? r.mealType.includes(meal) : String(r?.mealType) === meal; }
 
 
 // ---------- seed (trim for brevity) ----------
@@ -543,8 +540,7 @@ const [search, setSearch] = useState("");
     return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED;
   });
   const [favorites, setFavorites] = useState(gmLoad("gm_favorites", []));
-  const [names, setNames] = useState(
-    ensureTen(gmLoad("gm_names", Array.from({ length: 10 }, (_, i) => `Scout ${i + 1}`)))
+  const [names, setNames] = useState(ensureTen(gmLoad("gm_names", Array(10).fill(""))))
   );
 
   useEffect(() => gmSave("gm_recipes", recipes), [recipes]);
@@ -676,12 +672,12 @@ return list.filter((r) => {
       // prefer exact course; fallback to MAIN (except dessert)
       let pool = (filteredRecipes || []).filter(
         (r) =>
-          r.mealType === slot.mealType &&
+          hasMeal(r, slot.mealType) &&
           ((r.course || "main") === (slot.course || "main"))
       );
       if (pool.length === 0 && slot.course !== "dessert") {
         pool = (filteredRecipes || []).filter(
-          (r) => r.mealType === slot.mealType && (r.course || "main") === "main"
+          (r) => hasMeal(r, slot.mealType) && (r.course || "main") === "main"
         );
       }
       pool.sort((a, b) => Number(favs.has(b.id)) - Number(favs.has(a.id)));
@@ -911,7 +907,7 @@ return list.filter((r) => {
     setDiet({});
     setFavorites([]);
     setMenu([]);
-    setNames(ensureTen());
+    setNames(ensureTen(Array(10).fill(\"\")));
     // DO NOT reset recipes here; they stay persisted
     setImportMsg("");
   };
@@ -1147,7 +1143,7 @@ return list.filter((r) => {
                             {day[mt].map((slot) => {
                               const options = (filteredRecipes || []).filter(
                                 (r) =>
-                                  r.mealType === slot.mealType &&
+                                  hasMeal(r, slot.mealType) &&
                                   (r.course || "main") === (slot.course || "main")
                               );
                               const slotIndex = (menu || []).findIndex((s) => s.id === slot.id);
@@ -1189,7 +1185,7 @@ return list.filter((r) => {
           {/* Library */}
           <div className="gm-card gm-panel">
             <h2 className="gm-h2">
-              Recipes Library {(filteredRecipes || []).length ? `(${filteredRecipes.length} shown)` : ""}
+              Recipes Library {(libraryList || []).length ? `(${libraryList.length} shown)` : \"\"}
             </h2>
 <div className="gm-row" style={{ marginBottom: 8 }}>
   <input
@@ -1201,7 +1197,7 @@ return list.filter((r) => {
 </div>
 
             <div className="gm-grid-2 gm-scroll" style={{ paddingRight: 6 }}>
-              {(filteredRecipes || []).map((r) => (
+              {(libraryList || []).map((r) => (
                 <div key={r.id} className="gm-box">
                   <div className="gm-row">
                     <div className="gm-bold">{r.name}</div>
