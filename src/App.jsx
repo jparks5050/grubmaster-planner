@@ -906,7 +906,7 @@ return list.filter((r) => {
     setDiet({});
     setFavorites([]);
     setMenu([]);
-    setNames(ensureTen(Array(10).fill(\"\")));
+    setNames(ensureTen(Array(10).fill("")));
     // DO NOT reset recipes here; they stay persisted
     setImportMsg("");
   };
