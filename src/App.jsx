@@ -1396,7 +1396,7 @@ ${printRef.current.innerHTML || ""}
 // Duty roster helper
 // ---------------------------
 function RosterTable({ names = [], menu = [], recipes = [], printMode = false, dayCount = 0 }) {
-  const roles = ["Grubmaster", "Asst. Grubmaster", "Fireman", "Quartermaster", "Cleanup"];
+  const roles = ["Cook", "Asst Cook", "Clean-Up", "Asst Clean-Up"];
 
   const mains = React.useMemo(() => {
     const order = [];
