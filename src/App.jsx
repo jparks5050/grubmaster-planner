@@ -213,6 +213,7 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
         steps: [""],
       })
+  );
 
   const updateIng = (i, patch) =>
     setDraft((d) => {
