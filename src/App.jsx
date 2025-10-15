@@ -804,6 +804,7 @@ const libraryList = useMemo(() => {
 
   // Print
   // Print (Wix-safe: hidden iframe, no popups)
+  const printRef = useRef(null);
 const handlePrint = () => {
   if (!printRef.current) return;
 
