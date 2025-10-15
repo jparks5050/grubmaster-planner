@@ -213,7 +213,6 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         ingredients: [{ item: "", qtyPerPerson: 1, unit: "ea" }],
         steps: [""],
       })
-  );
 
   const updateIng = (i, patch) =>
     setDraft((d) => {
@@ -392,7 +391,6 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         </div>
       </div>
     </div>
-  );
 }
 
 // ---------- Export / Import ----------
@@ -540,8 +538,7 @@ const [search, setSearch] = useState("");
     return Array.isArray(ls) ? ls.map(normalizeRecipe) : SEED;
   });
   const [favorites, setFavorites] = useState(gmLoad("gm_favorites", []));
-  const [names, setNames] = useState(ensureTen(gmLoad("gm_names", Array(10).fill(""))))
-  );
+  const [names, setNames] = useState(ensureTen(gmLoad("gm_names", Array(10).fill(""))));
 
   useEffect(() => gmSave("gm_recipes", recipes), [recipes]);
   useEffect(() => gmSave("gm_favorites", favorites), [favorites]);
@@ -636,7 +633,6 @@ return list.filter((r) => {
   const dayCount = useMemo(
     () => Math.max(meals.breakfast || 0, meals.lunch || 0, meals.dinner || 0),
     [meals]
-  );
 
   const neededSlots = useMemo(() => {
     const list = [];
@@ -1339,7 +1335,6 @@ return list.filter((r) => {
         <span className="gm-subtle">Local fallback; cloud sync when Troop ID is set • Print via Export button</span>
       </footer>
     </div>
-  );
 }
 
 // ---------------------------
@@ -1445,5 +1440,4 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
         </div>
       ))}
     </div>
-  );
 }
