@@ -1,4 +1,4 @@
-// App (9).jsx — Day-grouped Menu + Duty Roster + Fixed 10-Scout Roster + Robust localStorage
+// App (12).jsx — Day-grouped Menu + Duty Roster + Fixed 10-Scout Roster + Robust localStorage
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // --- Firebase (anonymous) ---
@@ -68,24 +68,34 @@ const normalizeRecipe = (r = {}) => {
   const clean = { ...r };
   clean.id = r?.id || (crypto?.randomUUID?.() || String(Date.now()));
   clean.name = String(r?.name || "").trim();
-  clean.mealType = getMealType(r);
-  clean.course = String(r?.course || "").trim().toLowerCase();
 
-  clean.ingredients = arr(r?.ingredients);
-  clean.steps = arr(r?.steps);
-  clean.tags = obj(r?.tags);
-  clean.diet = obj(r?.diet);
-
-  // Dessert -> show in dinner slots
-  if (clean.mealType === "dessert") {
-    clean.mealType = "dinner";
-    if (!clean.course) clean.course = "dessert";
+  // mealType: accept string or array of strings
+  const mt = r?.mealType;
+  if (Array.isArray(mt)) {
+    clean.mealType = mt.map((m) => String(m || "").trim().toLowerCase()).filter(Boolean);
+    if (clean.mealType.length === 0) clean.mealType = ["dinner"];
+  } else {
+    clean.mealType = [String(mt || "dinner").trim().toLowerCase()];
   }
-  if (!["main", "side", "drink", "dessert"].includes(clean.course)) clean.course = "main";
 
+  clean.course = String(r?.course || "").trim().toLowerCase();
+  clean.ingredients = Array.isArray(r?.ingredients) ? r.ingredients : [];
+  clean.steps = Array.isArray(r?.steps) ? r.steps : [];
+  clean.tags = typeof r?.tags === "object" && r?.tags ? r.tags : {};
+  clean.diet = typeof r?.diet === "object" && r?.diet ? r.diet : {};
+
+  if (clean.course === "dessert" && !clean.mealType.includes("dinner")) {
+    clean.mealType = [...clean.mealType, "dinner"];
+  }
+
+  if (!["main", "side", "drink", "dessert"].includes(clean.course)) clean.course = "main";
   clean.serves = Number(r?.serves) || 8;
   return clean;
 };
+
+// helper: recipe supports given meal
+const hasMeal = (r, meal) => Array.isArray(r?.mealType) ? r.mealType.includes(meal) : String(r?.mealType) === meal;
+
 
 // ---------- seed (trim for brevity) ----------
 const SEED = [
@@ -248,16 +258,29 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
 
         <div className="gm-grid-3">
           <div>
-            <label className="gm-label">Meal</label>
-            <select
-              className="gm-select"
-              value={draft.mealType}
-              onChange={(e) => setDraft((d) => ({ ...d, mealType: e.target.value }))}
-            >
-              <option value="breakfast">Breakfast</option>
-              <option value="lunch">Lunch</option>
-              <option value="dinner">Dinner</option>
-            </select>
+            
+<label className="gm-label">Meals</label>
+<div className="gm-chips">
+  {["breakfast","lunch","dinner"].map((m) => (
+    <label key={m} className="gm-chip" style={{ textTransform: "capitalize" }}>
+      <input
+        type="checkbox"
+        checked={Array.isArray(draft.mealType) ? draft.mealType.includes(m) : draft.mealType === m}
+        onChange={(e) =>
+          setDraft((d) => {
+            const current = Array.isArray(d.mealType) ? d.mealType : [d.mealType];
+            const next = e.target.checked
+              ? Array.from(new Set([...current, m]))
+              : current.filter((x) => x !== m);
+            return { ...d, mealType: next.length ? next : ["dinner"] };
+          })
+        }
+      />
+      {m}
+    </label>
+  ))}
+</div>
+
           </div>
           <div>
             <label className="gm-label">Course</label>
@@ -478,6 +501,7 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
 
   // Troop (enables Firestore sync)
   const [troopId, setTroopId] = useState(gmLoad("gm_troop_id", initialTroopId || ""));
+const [search, setSearch] = useState("");
   useEffect(() => gmSave("gm_troop_id", troopId), [troopId]);
 
   const paths = useMemo(() => {
@@ -507,7 +531,8 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
     { key: "vegan", label: "Vegan" },
     { key: "glutenFree", label: "Gluten-free" },
     { key: "nutFree", label: "Nut-free" },
-    { key: "dairyFree", label: "Dairy-free" },
+      { key: "peanutFree", label: "Peanut-free" },
+{ key: "dairyFree", label: "Dairy-free" },
   ];
   const [diet, setDiet] = useState(gmLoad("gm_diet", {}));
   useEffect(() => gmSave("gm_diet", diet), [diet]);
@@ -581,7 +606,21 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
   const filteredRecipes = useMemo(() => {
     const list = Array.isArray(recipes) ? recipes : [];
     const d = obj(diet);
-    return list.filter((r) => {
+    
+const libraryList = useMemo(() => {
+  const q = search.trim().toLowerCase();
+  const base = filteredRecipes || [];
+  if (!q) return base;
+  const hit = (s) => String(s || "").toLowerCase().includes(q);
+  return base.filter((r) => {
+    const ingHit = (r.ingredients || []).some((i) => hit(i.item));
+    const stepHit = (r.steps || []).some((s) => hit(s));
+    const tagHit = r.tags && Object.keys(r.tags).some((k) => r.tags[k] && hit(k));
+    const mealHit = Array.isArray(r.mealType) ? r.mealType.some(hit) : hit(r.mealType);
+    return hit(r.name) || ingHit || stepHit || tagHit || mealHit || hit(r.course);
+  });
+}, [filteredRecipes, search]);
+return list.filter((r) => {
       const t = obj(r?.tags);
       const noTagTrue = !t.backpacking && !t.car && !t.canoe && !t.dutchOven; // allow untagged for car
       if (campType === "backpacking" && !t.backpacking) return false;
@@ -1152,6 +1191,15 @@ export default function App({ initialTroopId = "", embed = false } = {}) {
             <h2 className="gm-h2">
               Recipes Library {(filteredRecipes || []).length ? `(${filteredRecipes.length} shown)` : ""}
             </h2>
+<div className="gm-row" style={{ marginBottom: 8 }}>
+  <input
+    className="gm-input"
+    placeholder="Search name, ingredients, steps, tags…"
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+  />
+</div>
+
             <div className="gm-grid-2 gm-scroll" style={{ paddingRight: 6 }}>
               {(filteredRecipes || []).map((r) => (
                 <div key={r.id} className="gm-box">
