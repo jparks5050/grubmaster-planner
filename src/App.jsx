@@ -1338,6 +1338,7 @@ return list.filter((r) => {
         <span className="gm-subtle">Local fallback; cloud sync when Troop ID is set • Print via Export button</span>
       </footer>
     </div>
+    );
 }
 
 // ---------------------------
