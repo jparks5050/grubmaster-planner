@@ -392,6 +392,7 @@ function RecipeForm({ initial, onCancel, onSave, dietsList }) {
         </div>
       </div>
     </div>
+  );
 }
 
 // ---------- Export / Import ----------
