@@ -1443,7 +1443,7 @@ function RosterTable({ names = [], menu = [], recipes = [], printMode = false, d
         </div>
       ))}
     </div>
- </footer>
+  </footer>
     </div>
-}
- );
+  );         // close the `return (`
+}            // close the component function
