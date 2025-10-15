@@ -1184,7 +1184,7 @@ return list.filter((r) => {
           {/* Library */}
           <div className="gm-card gm-panel">
             <h2 className="gm-h2">
-              Recipes Library {(libraryList || []).length ? `(${libraryList.length} shown)` : ""}
+              {(libraryList || []).length ? `(${libraryList.length} shown)` : ""}
             </h2>
 <div className="gm-row" style={{ marginBottom: 8 }}>
   <input
