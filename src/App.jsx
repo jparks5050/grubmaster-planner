@@ -33,6 +33,7 @@ const firebaseCfg = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
+console.log("[GM] firebaseCfg used by app:", firebaseCfg);
 function getFirebase() {
   if (getApps().length === 0) initializeApp(firebaseCfg);
   return { auth: getAuth(), db: getFirestore() };
