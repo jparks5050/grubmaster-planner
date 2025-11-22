@@ -572,9 +572,9 @@ useEffect(() => {
     return;
   }
   const subs = [];
-  subs.push(
+ subs.push(
   onSnapshot(
-    query(paths.recipesCol, orderBy("createdAt", "asc")),
+    paths.recipesCol,   // 👈 NO query(), NO orderBy()
     (snap) => {
       console.log("[GM SNAP] recipes snapshot for troopId:", troopId, "docs:", snap.size);
       const incoming = snap.docs.map((d) =>
