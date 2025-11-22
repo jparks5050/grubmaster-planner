@@ -1031,7 +1031,7 @@ ${printRef.current.innerHTML || ""}
                     style={{ width: 110 }}
                     placeholder="e.g. 194"
                     value={troopId}
-                    onChange={(e) => setTroopId(e.target.value.trim())}
+                    onChange={(e) => setTroopId(e.target.value())}
                   />
                 </div>
                 <span className="gm-btn">{authed ? "Connected (anonymous)" : "Connecting…"}</span>
