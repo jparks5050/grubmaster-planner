@@ -15,6 +15,7 @@ import {
   query,
   orderBy,
   deleteDoc,
+  getDocs,
 } from "firebase/firestore";
 
 // ---------- tiny guards ----------
