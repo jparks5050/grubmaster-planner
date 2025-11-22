@@ -550,31 +550,37 @@ const [search, setSearch] = useState("");
   const [syncInfo, setSyncInfo] = useState({ status: "local-only", last: null });
 
   // Cloud subscriptions (if Troop ID is set)
-  useEffect(() => {
-    if (!authed || !troopId || !paths.recipesCol) {
-      setSyncInfo((s) => ({ ...s, status: "local-only" }));
-      return;
-    }
-    const subs = [];
-   subs.push(
-  onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
-    console.log("[GM] snapshot for troopId:", troopId, "docs:", snap.size);
-    const incoming = snap.docs.map((d) =>
-      normalizeRecipe({ id: d.id, ...d.data() })
-    );
-    console.log("[GM] first few incoming:", incoming.slice(0, 3));
-    if (incoming.length) {
-      setRecipes((prev) => {
-        const map = new Map((Array.isArray(prev) ? prev : []).map((r) => [r.id, r]));
-        incoming.forEach((r) => map.set(r.id, r));
-        const merged = Array.from(map.values());
-        console.log("[GM] merged recipes length:", merged.length);
-        return merged;
-      });
-    }
-    setSyncInfo({ status: "online", last: new Date().toISOString() });
-  })
-);
+useEffect(() => {
+  if (!authed || !troopId || !paths.recipesCol) {
+    setSyncInfo((s) => ({ ...s, status: "local-only" }));
+    return;
+  }
+  const subs = [];
+  subs.push(
+    onSnapshot(
+      query(paths.recipesCol, orderBy("createdAt", "asc")),
+      (snap) => {
+        console.log("[GM] snapshot for troopId:", troopId, "docs:", snap.size);
+        const incoming = snap.docs.map((d) =>
+          normalizeRecipe({ id: d.id, ...d.data() })
+        );
+        console.log("[GM] sample incoming:", incoming[0]);
+        if (incoming.length) {
+          setRecipes((prev) => {
+            const map = new Map((Array.isArray(prev) ? prev : []).map((r) => [r.id, r]));
+            incoming.forEach((r) => map.set(r.id, r));
+            const merged = Array.from(map.values());
+            console.log("[GM] merged recipes length:", merged.length);
+            return merged;
+          });
+        }
+        setSyncInfo({ status: "online", last: new Date().toISOString() });
+      },
+      (error) => {
+        console.error("[GM] Firestore snapshot error:", error.code, error.message);
+      }
+    )
+  );
 
     if (paths.settingsDoc) {
       subs.push(
