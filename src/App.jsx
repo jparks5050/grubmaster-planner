@@ -552,6 +552,21 @@ const [search, setSearch] = useState("");
 
   // Cloud subscriptions (if Troop ID is set)
 useEffect(() => {
+  const runDebug = async () => {
+    if (!authed || !troopId || !paths.recipesCol) return;
+
+    try {
+      console.log("[GM DEBUG] recipesCol path:", paths.recipesCol.path);
+      const snap = await getDocs(paths.recipesCol);
+      console.log("[GM DEBUG] getDocs() size:", snap.size);
+      const sample = snap.docs.slice(0, 3).map(d => ({ id: d.id, ...d.data() }));
+      console.log("[GM DEBUG] getDocs() sample docs:", sample);
+    } catch (e) {
+      console.error("[GM DEBUG] getDocs() error:", e.code, e.message);
+    }
+  };
+
+  runDebug();
   if (!authed || !troopId || !paths.recipesCol) {
     setSyncInfo((s) => ({ ...s, status: "local-only" }));
     return;
