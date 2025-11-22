@@ -555,19 +555,26 @@ const [search, setSearch] = useState("");
       return;
     }
     const subs = [];
-    subs.push(
-       onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
-   const incoming = snap.docs.map((d) => normalizeRecipe({ id: d.id, ...d.data() }));
-   if (incoming.length) {
-     setRecipes((prev) => {
-       const map = new Map((Array.isArray(prev) ? prev : []).map(r => [r.id, r]));
-       incoming.forEach(r => map.set(r.id, r));     // cloud wins per-id, but keep locals too
-       return Array.from(map.values());
-     });
-   }
-   setSyncInfo({ status: "online", last: new Date().toISOString() });
- })
+   subs.push(
+  onSnapshot(query(paths.recipesCol, orderBy("createdAt", "asc")), (snap) => {
+    console.log("[GM] snapshot for troopId:", troopId, "docs:", snap.size);
+    const incoming = snap.docs.map((d) =>
+      normalizeRecipe({ id: d.id, ...d.data() })
     );
+    console.log("[GM] first few incoming:", incoming.slice(0, 3));
+    if (incoming.length) {
+      setRecipes((prev) => {
+        const map = new Map((Array.isArray(prev) ? prev : []).map((r) => [r.id, r]));
+        incoming.forEach((r) => map.set(r.id, r));
+        const merged = Array.from(map.values());
+        console.log("[GM] merged recipes length:", merged.length);
+        return merged;
+      });
+    }
+    setSyncInfo({ status: "online", last: new Date().toISOString() });
+  })
+);
+
     if (paths.settingsDoc) {
       subs.push(
         onSnapshot(paths.settingsDoc, (d) => {
