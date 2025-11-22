@@ -763,18 +763,28 @@ const libraryList = useMemo(() => {
   };
 
   const addNew = async (rec) => {
-    const newR = normalizeRecipe({ ...rec, id: uid() });
-    if (authed && troopId && paths.recipesCol) {
-      await addDoc(paths.recipesCol, {
+  // Create a normalized recipe object with a stable ID
+  const newR = normalizeRecipe({ ...rec, id: uid() });
+
+  // If we are online and have valid Firebase paths, write to Firestore
+  if (authed && troopId && paths.recipesCol) {
+    await setDoc(
+      doc(paths.recipesCol, newR.id),
+      {
         ...newR,
         createdAt: serverTimestamp(),
         createdBy: user?.uid || "anon",
-      });
-      setSyncInfo({ status: "online", last: new Date().toISOString() });
-    } else {
-      setRecipes((prev) => [newR, ...prev]);
-    }
-  };
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    setSyncInfo({ status: "online", last: new Date().toISOString() });
+  }
+
+  // Always update local state so the recipe immediately appears in the UI
+  setRecipes((prev) => [newR, ...(prev || [])]);
+};
+
 
   const deleteRecipe = async (id) => {
     if (!confirm("Delete this recipe?")) return;
